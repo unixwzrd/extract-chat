@@ -27,10 +27,11 @@ class DocumentContext:
         default=None,
     )
 
-    def __init__(self, *, conversation: Any):
+    def __init__(self, *, conversation: Any, verbose: bool = False):
         self.conversation: Any = conversation
         self.turn_index: Dict[str, Any] = {}
         self._cite_pattern = re.compile(r'【(\d+)†L(\d+)-L(\d+)】')
+        self.verbose: bool = bool(verbose)
 
         mapping = getattr(conversation, "mapping", None)
         if isinstance(mapping, dict):
@@ -39,9 +40,9 @@ class DocumentContext:
 
     # ---- Lifecycle ----
     @classmethod
-    def initialize(cls, *, conversation: Any) -> "DocumentContext":
+    def initialize(cls, *, conversation: Any, verbose: bool = False) -> "DocumentContext":
         """Create and set the current context for this execution scope."""
-        ctx = cls(conversation=conversation)
+        ctx = cls(conversation=conversation, verbose=verbose)
         cls._current_context.set(ctx)
         return ctx
 
@@ -58,6 +59,13 @@ class DocumentContext:
         """Clear the current context (useful in tests)."""
         cls._current_context.set(None)
 
+    # ---- Debug helpers ----
+    def is_verbose(self) -> bool:
+        try:
+            return bool(self.verbose)
+        except Exception:
+            return False
+
     # ---- Helpers ----
     def get_turn(self, turn_id: str) -> Optional[Any]:
         """Return the turn object by id if available."""
@@ -71,11 +79,37 @@ class DocumentContext:
 
     # ---- Conversation structure helpers ----
     def get_root_turn_ids(self) -> List[str]:
-        """Return ids of root turns (parent is None)."""
+        """Return ids of root turns.
+
+        Prefer turns whose parent is None, but if none found, treat any turn
+        whose parent is missing from mapping as a root (common in exports).
+        """
         roots: List[str] = []
-        for turn_id, turn_data in (self.turn_index or {}).items():
-            parent = getattr(turn_data, 'parent', None)
+        mapping = self.turn_index or {}
+        # First pass: strict None parents
+        for turn_id, turn_data in mapping.items():
+            parent = None
+            try:
+                if hasattr(turn_data, '__getitem__'):
+                    parent = turn_data.get('parent', None)
+                else:
+                    parent = getattr(turn_data, 'parent', None)
+            except Exception:
+                parent = None
             if parent is None:
+                roots.append(turn_id)
+        if roots:
+            return roots
+        # Fallback: parent not in mapping
+        for turn_id, turn_data in mapping.items():
+            try:
+                if hasattr(turn_data, '__getitem__'):
+                    parent = turn_data.get('parent', None)
+                else:
+                    parent = getattr(turn_data, 'parent', None)
+            except Exception:
+                parent = None
+            if parent is None or (parent not in mapping):
                 roots.append(turn_id)
         return roots
 
@@ -84,7 +118,13 @@ class DocumentContext:
         turn = self.get_turn(turn_id)
         if not turn:
             return []
-        children = getattr(turn, 'children', [])
+        try:
+            if hasattr(turn, '__getitem__'):
+                children = turn.get('children', [])
+            else:
+                children = getattr(turn, 'children', [])
+        except Exception:
+            children = []
         return list(children) if isinstance(children, list) else []
 
     def _preorder_collect(self, turn_id: str, *, level: int, out: List[Tuple[str, int]], visited: set) -> None:

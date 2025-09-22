@@ -5,6 +5,7 @@ This module walks through the actual JSON structure without making assumptions
 about what fields exist or what constitutes turn content.
 """
 
+import logging
 from typing import Any, Dict
 
 
@@ -27,7 +28,7 @@ class JSONWalker:
         Returns:
             Analysis of the conversation structure
         """
-        print("DEBUG: Starting JSON walk of conversation structure")
+        logging.getLogger(__name__).debug("Starting JSON walk of conversation structure")
         
         # Reset state
         self.visited_paths = set()
@@ -39,7 +40,7 @@ class JSONWalker:
         
         # Walk the mapping structure specifically
         if "mapping" in conversation_data:
-            print("DEBUG: Found mapping structure, walking turns...")
+            logging.getLogger(__name__).debug("Found mapping structure, walking turns...")
             mapping_analysis = self._walk_mapping(conversation_data["mapping"])
         else:
             mapping_analysis = {"error": "No mapping found"}
@@ -64,7 +65,7 @@ class JSONWalker:
         turn_analyses = {}
         
         for turn_id, turn_data in mapping.items():
-            print(f"DEBUG: Walking turn {turn_id}")
+            logging.getLogger(__name__).debug("Walking turn %s", turn_id)
             turn_analysis = self._walk_turn(turn_id, turn_data)
             turn_analyses[turn_id] = turn_analysis
         
@@ -84,7 +85,7 @@ class JSONWalker:
         Returns:
             Analysis of the turn structure
         """
-        print(f"DEBUG: Analyzing turn {turn_id} structure")
+        logging.getLogger(__name__).debug("Analyzing turn %s structure", turn_id)
         
         turn_analysis = {
             "turn_id": turn_id,

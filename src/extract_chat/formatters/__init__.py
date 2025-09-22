@@ -6,7 +6,7 @@ This module provides the public interface for all formatters.
 
 from typing import Optional
 
-from pylib.schemas import Conversation
+from extract_chat.schemas.conversation import Conversation
 
 from .base import BaseFormatter, FormattingError
 from .html_formatter import HTMLFormatter

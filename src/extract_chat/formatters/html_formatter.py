@@ -1,11 +1,5 @@
-"""
-HTML formatter for extract_chat_v2.
+"""HTML formatter for extract_chat_v2."""
 
-This module implements the formatter that converts ChatGPT conversations
-to HTML format with proper styling and structure.
-"""
-
-import string
 from html import escape
 from typing import Any, Dict, List, Optional
 
@@ -23,8 +17,13 @@ def _ensure_trailing_period(value: str) -> str:
 
 # ftfy import moved to base class
 from extract_chat.css_manager import create_inline_css_style, get_css_content
-
-from .base import BaseFormatter, FormattingError
+from extract_chat.formatters.base import BaseFormatter, FormattingError
+from extract_chat.formatters.reference_utils import (
+    extract_reference_groups,
+    format_apa_reference_entry,
+    generate_backlink_labels,
+    replace_inline_citation_markers,
+)
 
 
 class HTMLFormatter(BaseFormatter):
@@ -212,7 +211,7 @@ class HTMLFormatter(BaseFormatter):
         # Replace inline markers with cite superscripts if we have references
         refs_block = block.get('references_table')
         if content and refs_block and refs_block.get('references'):
-            content = self._replace_inline_markers_with_seq(content, refs_block.get('references', []))
+            content = replace_inline_citation_markers(content, refs_block.get('references', []))
         converted_content = self._convert_markdown_to_html(content)
         # Clean up extra whitespace and newlines
         converted_content = self._clean_html_content(converted_content)
@@ -227,65 +226,12 @@ class HTMLFormatter(BaseFormatter):
         
         return '\n'.join(html_parts)
 
-    def _replace_inline_markers_with_seq(self, text: str, references: list) -> str:
-        """Replace 【ref_id†Lstart-Lend】 with HTML superscript links using seq and unique_id."""
-        try:
-            import re as _re
-            key_to_info = {}
-            for r in references:
-                key = (int(r.get('ref_id')), int(r.get('start_line')), int(r.get('end_line')))
-                key_to_info[key] = (int(r.get('seq')), r.get('unique_id'))
-            pattern = r'【(\d+)†L(\d+)-L(\d+)】'
-
-            def _repl(m):
-                ref_id = int(m.group(1))
-                s = int(m.group(2))
-                e = int(m.group(3))
-                info = key_to_info.get((ref_id, s, e))
-                if not info:
-                    return m.group(0)
-                seq, unique_id = info
-                return f'<sup id="cite-{unique_id}"><a href="#ref-{unique_id}">{seq}</a></sup>'
-
-            return _re.sub(pattern, _repl, text)
-        except Exception:
-            return text
-
     def _generate_global_references_section_html(self, content_blocks: List[Dict[str, Any]]) -> str:
         """Aggregate references across assistant blocks and render as an HTML section."""
         try:
-            groups: Dict[int, Dict[str, Any]] = {}
-            for block in content_blocks:
-                if block.get('type') != 'assistant':
-                    continue
-                refs_block = block.get('references_table') or {}
-                refs_list = refs_block.get('references') or []
-                turn_num = block.get('metadata', {}).get('reference_turn_number')
-                if not refs_list or not turn_num:
-                    continue
-                for ref in refs_list:
-                    ref_id = ref.get('ref_id')
-                    if ref_id is None:
-                        continue
-                    ref_id = int(ref_id)
-                    entry = dict(ref)
-                    entry['turn_num'] = int(turn_num)
-                    group = groups.setdefault(ref_id, {
-                        'ref_id': ref_id,
-                        'entries': [],
-                        'meta': None,
-                        'best_score': -1,
-                    })
-                    group['entries'].append(entry)
-                    score = self._score_reference_entry(entry)
-                    if score > group['best_score']:
-                        group['meta'] = entry
-                        group['best_score'] = score
-
+            groups = extract_reference_groups(content_blocks)
             if not groups:
                 return ""
-
-            sorted_groups = sorted(groups.values(), key=self._reference_sort_key)
 
             parts: List[str] = [
                 '<div class="block system-block">',
@@ -294,37 +240,43 @@ class HTMLFormatter(BaseFormatter):
                 '<ol class="references">',
             ]
 
-            for index, group in enumerate(sorted_groups, start=1):
+            for index, group in enumerate(groups, start=1):
                 meta = group.get('meta') or {}
-                occurrences = sorted(group['entries'], key=lambda e: int(e.get('seq', 10**9)))
+                occurrences = group.get('occurrences') or []
                 if not occurrences:
                     continue
 
                 anchor_html = ''.join(
-                    f'<a id="ref-{occ.get("unique_id")}"></a>'
-                    for occ in occurrences if occ.get('unique_id')
+                    f'<a id="ref-target-{occ.get("unique_id")}"></a>'
+                    for occ in occurrences
+                    if occ.get('unique_id')
                 )
 
-                citation_label = f"Ref {index}"
-                apa_text = self._format_apa_reference_entry(meta, html=True)
-                snippet = (meta.get('text') or '').strip().replace('\n', ' ')
+                seq_values = [int(occ.get('seq', 10**9)) for occ in occurrences if occ.get('seq') is not None]
+                seq_values = [s for s in seq_values if s != 10**9]
+                label_seq = seq_values[0] if seq_values else index
+                citation_label = f"Ref {label_seq}"
+                apa_text = format_apa_reference_entry(meta, html=True)
+                snippet = ''
+                if not meta.get('is_fallback'):
+                    snippet = (meta.get('text') or '').strip().replace('\n', ' ')
                 snippet_html = f'<span class="excerpt">“{escape(snippet)}”</span>' if snippet else ''
 
-                letters = self._backlink_labels(len(occurrences))
                 backlinks: List[str] = []
+                default_letters = generate_backlink_labels(len(occurrences))
                 for idx, occ in enumerate(occurrences):
                     uid = occ.get('unique_id')
                     if not uid:
                         continue
-                    label = letters[idx]
-                    link = f'<a class="backref" href="#cite-{uid}">{label}^</a>'
+                    label = (occ.get('occurrence_label') or '').strip() or default_letters[idx]
+                    link = f'<a class="backref" href="#ref-source-{uid}">{label}^</a>'
                     backlinks.append(link)
 
                 body_parts = [f'<strong>{escape(citation_label)}.</strong> {apa_text}']
                 if snippet_html:
                     body_parts.append(snippet_html)
                 if backlinks:
-                    body_parts.append(' '.join(backlinks))
+                    body_parts.append(', '.join(backlinks))
                 body = ' '.join(part for part in body_parts if part)
                 parts.append(f'<li>{anchor_html} {body}</li>')
 
@@ -334,82 +286,6 @@ class HTMLFormatter(BaseFormatter):
             return '\n'.join(parts)
         except Exception:
             return ""
-
-    def _score_reference_entry(self, entry: Dict[str, Any]) -> int:
-        score = 0
-        if (entry.get('title') or '').strip():
-            score += 4
-        if (entry.get('url') or '').strip():
-            score += 3
-        if (entry.get('text') or '').strip():
-            score += 2
-        if entry.get('attribution'):
-            score += 1
-        return score
-
-    def _reference_sort_key(self, group: Dict[str, Any]) -> tuple:
-        entries = group.get('entries') or []
-        if not entries:
-            return (10**9, group.get('ref_id', 10**9))
-        first = min(entries, key=lambda e: int(e.get('seq', 10**9)))
-        return (int(first.get('seq', 10**9)), group.get('ref_id', 10**9))
-
-    def _backlink_labels(self, count: int) -> List[str]:
-        labels = []
-        alphabet = string.ascii_lowercase
-        for idx in range(count):
-            label = ''
-            n = idx
-            while True:
-                label = alphabet[n % 26] + label
-                n = n // 26 - 1
-                if n < 0:
-                    break
-            labels.append(label)
-        return labels
-
-    def _format_apa_reference_entry(self, info: Dict[str, Any], html: bool) -> str:
-        raw_title = (info.get('title') or '').strip()
-        if not raw_title:
-            raw_title = (info.get('text') or '').strip()
-        if not raw_title:
-            raw_title = (info.get('url') or '').strip()
-        title = raw_title or 'Untitled source'
-        if title == 'Untitled source':
-            ref_id = info.get('ref_id')
-            turn_num = info.get('turn_num')
-            if ref_id is not None:
-                if turn_num is not None:
-                    title = f"Reference {ref_id} (Turn {turn_num})"
-                else:
-                    title = f"Reference {ref_id}"
-        url = (info.get('url') or '').strip()
-        pub_date = info.get('pub_date')
-        year = self._extract_year(pub_date)
-        year_fragment = f"({year})." if year else "(n.d.)."
-
-        if html and url:
-            title_fmt = f"<a href=\"{url}\"><em>{title}</em></a>"
-        else:
-            title_fmt = f"<em>{title}</em>" if html else title
-
-        parts: List[str] = []
-        parts.append(year_fragment)
-        parts.append(title_fmt)
-
-        return ' '.join(p.strip() for p in parts if p).strip()
-
-    def _extract_year(self, value: Any) -> Optional[str]:
-        if not value:
-            return None
-        try:
-            import re as _re
-            match = _re.search(r'(\\d{4})', str(value))
-            if match:
-                return match.group(1)
-        except Exception:
-            return None
-        return None
 
     def _format_code_block_dict(self, block: Dict[str, Any]) -> str:
         """Format a code block dictionary to HTML."""

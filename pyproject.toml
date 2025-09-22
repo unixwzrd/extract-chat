@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "extract-chat"
+version = "0.1.0"
+description = "Extract ChatGPT conversations from exported JSON to Markdown/HTML with citations."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Proprietary"}
+authors = [{ name = "extract-chat maintainers" }]
+dependencies = [
+  "pydantic>=2",
+  "ftfy>=6",
+]
+
+[project.scripts]
+extract-chat = "extract_chat.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["extract_chat*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,139 +1,117 @@
-# Ensure we can import from bin/pylib
-import os
-import sys
-from typing import Any
+import json
+import re
+from pathlib import Path
+from typing import Any, Tuple
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(BASE_DIR, 'bin'))
+from extract_chat.context.document_context import DocumentContext
+from extract_chat.processors.citation_processor import (
+    CitationProcessor,
+    _reference_identity_from_fields,
+)
+from extract_chat.schemas.conversation import Conversation
 
-from pylib.processors.citation_processor import CitationProcessor
-
-
-class FakePart:
-    def __init__(self, text: str):
-        self.text = text
-
-
-class FakeContent:
-    def __init__(self, text: str):
-        self.content_type = 'text'
-        self.parts = [FakePart(text)]
+TURN_ID = "c3df4f37-ab12-4ab6-a810-6b687a759b83"
+SAMPLE_PATH = Path("tmp/PA-Paper/chatgpt_convo_686ab2a1-6578-8003-b0e6-79b76323e002.json")
+MARKER_PATTERN = re.compile(r"【(\d+)†L(\d+)-L(\d+)】")
 
 
-class FakeMessage:
-    def __init__(self, text: str, metadata: Any):
-        self.content = FakeContent(text)
-        self.metadata = metadata
+def load_turn() -> Tuple[Conversation, Any]:
+    raw = json.loads(SAMPLE_PATH.read_text(encoding="utf-8"))
+    conversation = Conversation.model_validate(raw)
+    turn = conversation.mapping[TURN_ID]
+    return conversation, turn
 
 
-class FakeTurn:
-    def __init__(self, message: Any):
-        self.message = message
-
-
-def make_metadata():
-    # Citations (metadata.citations):
-    # - one exact match for 28,L249-L258 with title only
-    # - one off-by-one end (257) for same ref_id; provides url only
-    # - one invalid
-    citations = [
-        {
-            'metadata': {
-                'title': 'Exact Title',
-                'url': '',
-                'text': '',
-                'pub_date': '2022-01-01',
-                'extra': {'cited_message_idx': 28, 'start_line_num': 249, 'end_line_num': 258},
-            },
-        },
-        {
-            'metadata': {
-                'title': '',
-                'url': 'https://example.com/exact-or-near',
-                'text': '',
-                'pub_date': None,
-                'extra': {'cited_message_idx': 28, 'start_line_num': 249, 'end_line_num': 257},
-            },
-        },
-        {
-            'metadata': {
-                'title': 'Should be skipped',
-                'extra': {'cited_message_idx': 99, 'start_line_num': 1, 'end_line_num': 2},
-            },
-            'invalid_reason': 'bad',
-        },
-    ]
-
-    # Content references (metadata.content_references):
-    # - one exact with snippet/text
-    # - one invalid entry
-    content_refs = [
-        {
-            'matched_text': 'Some context with marker  around it',
-            'grouped_webpages': [
-                {
-                    'items': [
-                        {
-                            'title': '',
-                            'url': 'https://example.com/fallback',
-                            'snippet': 'Quoted snippet here',
-                            'pub_date': '2021-12-31',
-                            'attribution': 'Example Source',
-                        }
-                    ]
-                }
-            ],
-        },
-        {
-            'matched_text': 'Noise ',
-            'invalid': True,
-        },
-    ]
-
-    class Meta(dict):
-        # Allow both attribute and dict access
-        def __getattr__(self, item):
-            try:
-                return self[item]
-            except KeyError:
-                raise AttributeError(item)
-
-    return Meta({'citations': citations, 'content_references': content_refs})
-
-
-def run_test():
-    text = (
-        "Intro text. "
-        "Marker A:  and again . "
-        "A different marker: ."
+def _identity_from_reference(ref: dict) -> tuple:
+    return _reference_identity_from_fields(
+        ref.get("url"),
+        ref.get("title"),
+        ref.get("text"),
+        ref.get("ref_id", 0),
+        ref.get("seq", 0),
+        bool(ref.get("is_fallback")),
+        ref.get("source_label"),
     )
 
-    meta = make_metadata()
-    message = FakeMessage(text=text, metadata=meta)
-    turn = FakeTurn(message=message)
 
-    proc = CitationProcessor()
-    result = proc.get_references_data(turn=turn, ref_turn_counter=1)
+def test_citation_processor_merges_metadata():
+    conversation, turn = load_turn()
+    DocumentContext.initialize(conversation=conversation)
+    try:
+        processor = CitationProcessor()
+        seq_map = {}
+        result, next_seq = processor.get_references_data(
+            turn=turn,
+            ref_turn_counter=1,
+            start_seq=1,
+            existing_sequences=seq_map,
+        )
+    finally:
+        DocumentContext.reset()
 
-    refs = result.get('references', [])
-    # Verify markers were extracted by checking references include both keys
-    keys_in_refs = { (r['ref_id'], r['start_line'], r['end_line']) for r in refs }
-    assert (28, 249, 258) in keys_in_refs, 'Primary marker missing in references list'
-    assert (5, 10, 15) in keys_in_refs, 'Secondary marker missing in references list'
+    references = result["references"]
+    assert references, "Expected references to be returned for the sample turn"
 
-    # Find the reference for (28,249,258) and check merged fields
-    ref_28 = next((r for r in refs if r['ref_id'] == 28 and r['start_line'] == 249 and r['end_line'] == 258), None)
-    assert ref_28, 'Merged reference for 28/249/258 not found in final list'
-    assert ref_28['title'] == 'Exact Title', 'Title should come from citations'
-    # url can come from tolerant citation or content_refs fallback; ensure non-empty
-    assert ref_28['url'], 'URL expected to be filled from tolerant citation or content refs'
-    assert ref_28['text'] == 'Quoted snippet here', 'Text/snippet should be filled from content refs'
-    assert ref_28['attribution'] == 'Example Source', 'Attribution should be filled from content refs'
+    identities = {}
+    for ref in references:
+        if ref.get("skip_citation"):
+            continue
+        identity = _identity_from_reference(ref)
+        identities.setdefault(identity, ref["seq"])
+        assert identities[identity] == ref["seq"], "References sharing identity should reuse the same sequence number"
 
-    print('OK: all assertions passed')
+    used_sequences = {int(ref["seq"]) for ref in references if not ref.get("skip_citation")}
+    if used_sequences:
+        assert next_seq >= max(used_sequences) + 1
+    assert len(set(identities.values())) == len(identities)
 
+    refs_by_key = {
+        (ref["ref_id"], ref["start_line"], ref["end_line"]): ref
+        for ref in references
+        if not ref.get("skip_citation")
+    }
 
-if __name__ == '__main__':
-    run_test()
+    key = (18, 153, 161)
+    assert key in refs_by_key, "Reference marker for citation 18 should be present"
 
+    entry = refs_by_key[key]
+    assert entry["turn_id"] == 1
+    assert entry["unique_id"].startswith("1_")
+    assert entry["title"] == (
+        "The Impact of Parental Alienating Behaviours on the Mental Health of Adults "
+        "Alienated in Childhood - PMC"
+    )
+    assert entry["url"].startswith("https://pmc.ncbi.nlm.nih.gov/articles/PMC9026878/")
+    assert entry["attribution"] == "pmc.ncbi.nlm.nih.gov"
 
+    metadata = turn.message.metadata
+    citation_keys = set()
+    for citation in metadata["citations"]:
+        if citation.get("invalid_reason"):
+            continue
+        extra = citation["metadata"].get("extra", {})
+        try:
+            citation_keys.add(
+                (
+                    int(extra["cited_message_idx"]),
+                    int(extra["start_line_num"]),
+                    int(extra["end_line_num"]),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    content_keys = set()
+    for content_ref in metadata["content_references"]:
+        if content_ref.get("invalid"):
+            continue
+        match = MARKER_PATTERN.search(content_ref.get("matched_text", ""))
+        if not match:
+            continue
+        content_keys.add(
+            (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        )
+
+    result_keys = set(refs_by_key.keys())
+    assert citation_keys.issubset(result_keys)
+    assert content_keys.issubset(result_keys)

@@ -13,167 +13,164 @@ from typing import Optional
 def get_default_css_content() -> str:
     """Return the default CSS content for the HTML output."""
     return """body {
-    color: #e8e8e8;
-    background-color: #111111;
-    font-family: Arial, sans-serif;
-    line-height: 1.2;
-    max-width: 900px;
+    color: #e7ecf6;
+    background-color: #111621;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    line-height: 1.55;
+    max-width: 980px;
     margin: 0 auto;
-    padding: 20px;
-    font-size: 12pt;
+    padding: 32px 28px;
+    font-size: 13.5pt;
 }
 
 h1 {
-    color: #f8f8f8;
-    font-size: 24pt;
+    color: #f0f6ff;
+    font-size: 28pt;
+    margin-bottom: 0.25em;
 }
 
 h2 {
-    color: #efefef;
-    margin-top: 30px;
-    font-size: 18pt;
+    color: #d5e2ff;
+    margin-top: 36px;
+    font-size: 20pt;
 }
 
 h3 {
-    color: #efefef;
-    margin-top: 20px;
-    font-size: 14pt;
+    color: #bed0ff;
+    margin-top: 26px;
+    font-size: 16pt;
 }
 
 pre {
-    background-color: #303030;
-    padding: 5px;
-    border-radius: 5px;
+    background-color: #1d2534;
+    padding: 10px 14px;
+    border-radius: 6px;
+    border: 1px solid #2e3a52;
     overflow-x: auto;
-    font-size: 10pt;
-    line-height: 1;
-    margin: 0.5em 0;
-    font-family: monospace;
-    white-space-collapse: preserve;
-    text-wrap-mode: wrap;
+    font-size: 10.5pt;
+    margin: 0.75em 0;
+    font-family: 'Fira Code', 'SFMono-Regular', Menlo, monospace;
+    white-space: pre-wrap;
 }
 
 code {
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 10pt;
-    line-height: 1.0;
-    display: block;
-    white-space-collapse: preserve;
-    text-wrap-mode: wrap;
+    font-family: 'Fira Code', 'SFMono-Regular', Menlo, monospace;
+    font-size: 10.5pt;
+    background-color: #1d2534;
+    padding: 2px 4px;
+    border-radius: 4px;
 }
 
 ul, ol {
-    margin: 10px 0;
-    padding-left: 20px;
+    margin: 12px 0;
+    padding-left: 24px;
 }
 
 li {
-    margin: 5px 0;
+    margin: 6px 0;
 }
 
 table {
     border-collapse: collapse;
     width: 100%;
-    margin: 10px 0;
-    background-color: #222;
+    margin: 14px 0;
+    background-color: #121a27;
+    border: 1px solid #2b394f;
 }
 
 th, td {
-    border: 1px solid #444;
-    padding: 8px;
+    border: 1px solid #2b394f;
+    padding: 10px;
     text-align: left;
 }
 
 th {
-    background-color: #333;
-    color: #fff;
+    background-color: #1b2538;
+    color: #dee7ff;
 }
 
 tr:nth-child(even) {
-    background-color: #2a2a2a;
-}
-
-tr:nth-child(odd) {
-    background-color: #222;
+    background-color: #151e2c;
 }
 
 .timestamp {
-    color: #cecece;
-    font-size: 9pt;
-    margin: 5px 0;
+    color: #92a1c2;
+    font-size: 10pt;
+    margin: 6px 0;
 }
 
 details {
-    margin: 10px 0;
-    padding: 10px;
-    background-color: #222244;
-    border: 1px solid #444;
-    border-radius: 5px;
+    margin: 12px 0;
+    padding: 12px 16px;
+    background-color: #172134;
+    border: 1px solid #253148;
+    border-radius: 6px;
 }
 
 details summary {
     cursor: pointer;
-    color: #92c1f7;
-    font-weight: bold;
-    margin: -10px;
-    padding: 10px;
-    background-color: #1a1a2a;
-    border-bottom: 1px solid #444;
+    color: #abc0ff;
+    font-weight: 600;
+    margin: -12px;
+    padding: 12px 16px;
+    background-color: #142031;
+    border-bottom: 1px solid #253148;
 }
 
 details[open] summary {
-    margin-bottom: 10px;
+    margin-bottom: 12px;
 }
 
 .tool-message {
-    background-color: #222244;
-    border: 1px solid #444;
-    padding: 10px;
-    margin: 10px 0;
-    border-radius: 5px;
+    background-color: #1d1d2b;
+    border: 1px solid #493f6b;
+    padding: 14px;
+    margin: 12px 0;
+    border-radius: 6px;
 }
 
 .error-message {
-    background-color: #442222;
-    border: 1px solid #844;
-    padding: 10px;
-    margin: 10px 0;
-    border-radius: 5px;
+    background-color: #261a1f;
+    border: 1px solid #a15b5b;
+    padding: 14px;
+    margin: 12px 0;
+    border-radius: 6px;
 }
 
 .block {
-    margin-bottom: 25px;
-    padding: 20px;
-    border-radius: 8px;
-    border-left: 4px solid #444;
-    background-color: #222;
+    margin-bottom: 28px;
+    padding: 22px 24px;
+    border-radius: 10px;
+    border-left: 5px solid #2e3a52;
+    background-color: #161f2e;
+    box-shadow: 0 10px 22px rgba(5, 10, 20, 0.4);
 }
 
 .user-block {
-    border-left-color: #3498db;
-    background-color: #1e3a5f;
+    border-left-color: #4f8bff;
+    background-color: #16233a;
 }
 
 .assistant-block {
-    border-left-color: #27ae60;
-    background-color: #1e4d2e;
+    border-left-color: #2fd690;
+    background-color: #112c25;
 }
 
 .tool-block {
-    border-left-color: #f39c12;
-    background-color: #4d3a1e;
-    margin-left: 20px;
+    border-left-color: #f4a261;
+    background-color: #2d2116;
+    margin-left: 24px;
 }
 
 .system-block {
-    border-left-color: #e74c3c;
-    background-color: #4d1e1e;
+    border-left-color: #ff6b6b;
+    background-color: #32161b;
 }
 
 .block-header {
-    font-weight: bold;
-    margin-bottom: 10px;
-    color: #f8f8f8;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: #e0e8ff;
 }
 
 .content {
@@ -182,52 +179,92 @@ details[open] summary {
 }
 
 .code-block {
-    background: #303030;
-    color: #e8e8e8;
-    padding: 15px;
-    border-radius: 5px;
+    background: #0e131f;
+    color: #f2f2f2;
+    padding: 18px;
+    border-radius: 6px;
     overflow-x: auto;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-    margin: 10px 0;
-    white-space: pre-wrap;
-    word-wrap: break-word;
+    font-family: 'Fira Code', 'SFMono-Regular', Menlo, monospace;
+    margin: 14px 0;
+    white-space: pre;
 }
 
 .tool-call {
-    background: #3a3a3a;
-    border: 1px solid #555;
-    border-radius: 5px;
-    padding: 10px;
-    margin: 5px 0;
+    background: #152032;
+    border: 1px solid #263246;
+    border-radius: 6px;
+    padding: 12px;
+}
+
+.references {
+    margin-top: 18px;
+    padding-left: 24px;
+}
+
+.references li {
+    margin-bottom: 12px;
+}
+
+.references li .excerpt {
+    display: block;
+    margin-top: 4px;
+    color: #c7d2ef;
+    font-style: italic;
+}
+
+.references li .lines {
+    margin-left: 6px;
+    color: #9baed7;
+}
+
+.references li .backref {
+    margin-left: 6px;
+    text-decoration: none;
+    color: #8fbaff;
+}
+
+sup a {
+    color: #8fbaff;
+    text-decoration: none;
+}
+
+a {
+    color: #6aa7ff;
+}
+
+a:hover {
+    color: #3d7ce6;
+}
+
+.block + .references {
+    margin-top: 24px;
 }
 
 .tool-input, .tool-output {
-    background: #2d2d2d;
-    padding: 8px;
-    border-radius: 3px;
-    margin: 5px 0;
-    border: 1px solid #555;
+    background: #1c2638;
+    padding: 10px;
+    border-radius: 6px;
+    margin: 6px 0;
+    border: 1px solid #2d3b52;
 }
 
-/* Responsive design */
 @media (max-width: 768px) {
     body {
-        padding: 10px;
-        font-size: 14px;
+        padding: 16px;
+        font-size: 13px;
     }
     
     .block {
-        padding: 12px;
-        margin-bottom: 20px;
+        padding: 16px;
+        margin-bottom: 22px;
     }
     
     .code-block {
-        padding: 12px;
+        padding: 14px;
         font-size: 12px;
     }
 }
 
-/* Print styles */
 @media print {
     body {
         background: white;
@@ -239,47 +276,30 @@ details[open] summary {
     .block {
         break-inside: avoid;
         page-break-inside: avoid;
+        box-shadow: none;
+        border-left-color: #666;
+        background-color: #fff;
     }
 }
 """
 
 
 def get_css_content(css_file_path: Optional[str] = None) -> str:
-    """
-    Get CSS content from file or return default.
-    
-    Args:
-        css_file_path: Optional path to custom CSS file
-        
-    Returns:
-        CSS content as string
-    """
+    """Get CSS content from file or return default."""
     if css_file_path and os.path.exists(css_file_path):
         try:
             with open(css_file_path, 'r', encoding='utf-8') as f:
                 return f.read()
         except Exception as e:
             print(f"Warning: Could not read CSS file {css_file_path}: {e}")
-    
     return get_default_css_content()
 
 
 def write_css_file(output_path: str, css_content: Optional[str] = None) -> str:
-    """
-    Write CSS content to a file.
-    
-    Args:
-        output_path: Path where CSS file should be written
-        css_content: CSS content to write (uses default if None)
-        
-    Returns:
-        Path to the written CSS file
-    """
+    """Write CSS content to a file."""
     if css_content is None:
         css_content = get_default_css_content()
-    
     css_path = get_css_file_path(output_path)
-    
     try:
         with open(css_path, 'w', encoding='utf-8') as f:
             f.write(css_content)
@@ -290,41 +310,17 @@ def write_css_file(output_path: str, css_content: Optional[str] = None) -> str:
 
 
 def get_css_file_path(html_file_path: str) -> str:
-    """
-    Get the CSS file path for a given HTML file.
-    
-    Args:
-        html_file_path: Path to HTML file
-        
-    Returns:
-        Path to corresponding CSS file
-    """
+    """Get the CSS file path for a given HTML file."""
     html_path = Path(html_file_path)
     css_path = html_path.with_suffix('.css')
     return str(css_path)
 
 
 def create_external_css_link(css_file_path: str) -> str:
-    """
-    Create an HTML link tag for external CSS.
-    
-    Args:
-        css_file_path: Path to CSS file
-        
-    Returns:
-        HTML link tag string
-    """
+    """Create an HTML link tag for external CSS."""
     return f'<link rel="stylesheet" type="text/css" href="{css_file_path}">'
 
 
 def create_inline_css_style(css_content: str) -> str:
-    """
-    Create an HTML style tag with inline CSS.
-    
-    Args:
-        css_content: CSS content to include
-        
-    Returns:
-        HTML style tag string
-    """
+    """Create an HTML style tag with inline CSS."""
     return f'<style>\n{css_content}\n</style>'

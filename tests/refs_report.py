@@ -4,10 +4,10 @@ from typing import Any
 
 # Workspace root is two levels up from this file
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(BASE_DIR, 'bin'))
+sys.path.insert(0, os.path.join(BASE_DIR, 'src'))
 
-from pylib.processors.citation_processor import CitationProcessor
-from pylib.schemas.conversation import Conversation
+from extract_chat.processors.citation_processor import CitationProcessor
+from extract_chat.schemas.conversation import Conversation
 
 
 def has_refs(message: Any) -> bool:
@@ -121,6 +121,9 @@ def main(json_path: str) -> None:
     ref_turn_counter = 0
     print(f"REPORT: scanning {len(convo.mapping)} turns")
 
+    global_seq = 1
+    seq_map = {}
+
     for turn_id, turn in convo.mapping.items():
         message = getattr(turn, 'message', None)
         if not message:
@@ -128,7 +131,12 @@ def main(json_path: str) -> None:
         if not has_refs(message):
             continue
         ref_turn_counter += 1
-        refs_block = proc.get_references_data(turn=turn, ref_turn_counter=ref_turn_counter)
+        refs_block, global_seq = proc.get_references_data(
+            turn=turn,
+            ref_turn_counter=ref_turn_counter,
+            start_seq=global_seq,
+            existing_sequences=seq_map,
+        )
         summary = summarize_refs(refs_block)
         meta_summary = summarize_metadata_fields(message, proc)
         print(f"TURN {ref_turn_counter} id={turn_id}")

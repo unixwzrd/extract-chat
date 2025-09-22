@@ -9,9 +9,9 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
 import ftfy
-from pylib.schemas import Conversation
 
 
+# Note: Avoid importing Conversation here to keep formatter base decoupled
 class BaseFormatter(ABC):
     """
     Base class for all output formatters.
@@ -30,7 +30,7 @@ class BaseFormatter(ABC):
         self.config = config or {}
 
     @abstractmethod
-    def format_document(self, document: Conversation) -> str:
+    def format_document(self, document: Any) -> str:
         """
         Format a document to the target output format.
 
@@ -43,7 +43,7 @@ class BaseFormatter(ABC):
         pass
 
     @abstractmethod
-    def format_conversation(self, conversation: Conversation) -> str:
+    def format_conversation(self, conversation: Any) -> str:
         """
         Format a conversation to the target output format.
 
@@ -55,7 +55,7 @@ class BaseFormatter(ABC):
         """
         pass
 
-    def validate_document(self, document: Conversation) -> bool:
+    def validate_document(self, document: Any) -> bool:
         """
         Validate that the document can be formatted.
 
@@ -66,11 +66,15 @@ class BaseFormatter(ABC):
             True if valid, False otherwise
         """
         try:
-            # Pydantic models are validated on creation, so if we have a conversation
-            # object, it should already be valid. We can do additional checks here.
-            if not document or not hasattr(document, 'mapping'):
+            # Accept either a Conversation (has mapping) or a FormatterAdapter
+            # (has get_content_blocks/get_metadata)
+            if not document:
                 return False
-            return True
+            if hasattr(document, 'mapping'):
+                return True
+            if hasattr(document, 'get_content_blocks') and hasattr(document, 'get_metadata'):
+                return True
+            return False
         except Exception as e:
             # Log validation errors for debugging
             import logging

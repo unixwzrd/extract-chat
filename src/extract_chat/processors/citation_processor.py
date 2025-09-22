@@ -23,6 +23,7 @@ class ReferenceEntry:
     pub_date: Optional[str] = None
     attribution: str = ""
     is_fallback: bool = False
+    source_label: str = ""
 
     def merge(self, data: Dict[str, Any]) -> None:
         """Fill empty fields without overwriting existing values."""
@@ -55,10 +56,11 @@ class ReferenceEntry:
             if attribution:
                 self.attribution = attribution
 
-    def to_payload(self, *, turn_prefix: int) -> Dict[str, Any]:
+    def to_payload(self, *, turn_prefix: int, occurrence_index: int = 0) -> Dict[str, Any]:
         ref_id, start_line, end_line = self.key
+        unique_suffix = f"_{occurrence_index}" if occurrence_index else "_0"
         return {
-            "unique_id": f"{turn_prefix}_{self.seq}_{ref_id}_{start_line}_{end_line}",
+            "unique_id": f"{turn_prefix}_{self.seq}{unique_suffix}_{ref_id}_{start_line}_{end_line}",
             "turn_id": turn_prefix,
             "seq": self.seq,
             "ref_id": ref_id,
@@ -70,6 +72,8 @@ class ReferenceEntry:
             "pub_date": self.pub_date,
             "attribution": self.attribution,
             "is_fallback": self.is_fallback,
+            "source_label": self.source_label,
+            "occurrence_index": occurrence_index,
         }
 
 
@@ -78,7 +82,7 @@ class CitationProcessor:
 
     def __init__(self) -> None:
         self.logger = logging.getLogger(__name__)
-        self._source_metadata_cache: Dict[str, Dict[int, str]] = {}
+        self._source_metadata_cache: Dict[str, Dict[str, Dict[Any, str]]] = {}
 
     def get_references_data(
         self,
@@ -88,18 +92,22 @@ class CitationProcessor:
         start_seq: int = 1,
         existing_sequences: Optional[Dict[int, int]] = None,
     ) -> Tuple[Dict[str, List[Dict[str, Any]]], int]:
-        refs_by_key, next_seq = self._seed_entries(turn)
+        refs_by_key, next_seq, marker_occurrences = self._seed_entries(turn)
         next_seq = self._merge_citations(turn, refs_by_key, next_seq)
         self._merge_content_references(turn, refs_by_key, next_seq)
         self._propagate_ref_metadata(refs_by_key)
 
-        sources_metadata = self._extract_sources_metadata(turn)
+        sources_by_key, sources_by_ref = self._extract_sources_metadata(turn)
         for entry in refs_by_key.values():
-            if not entry.title or entry.title.startswith("Metadata missing"):
-                fallback = sources_metadata.get(entry.key[0])
-                if fallback:
+            fallback = sources_by_key.get(entry.key)
+            if not fallback:
+                fallback = sources_by_ref.get(entry.key[0])
+            if fallback:
+                entry.source_label = fallback
+                if not entry.title or entry.title.startswith("Metadata missing"):
                     entry.title = fallback
-                    entry.text = entry.text or fallback
+                    if not entry.text:
+                        entry.text = fallback
                     entry.is_fallback = True
 
         next_global_seq = self._assign_sequences(
@@ -112,7 +120,49 @@ class CitationProcessor:
             refs_by_key.values(),
             key=lambda entry: (entry.seq, entry.key[0], entry.key[1], entry.key[2]),
         )
-        payload = [entry.to_payload(turn_prefix=ref_turn_counter) for entry in ordered_entries]
+
+        occurrence_counts: Dict[MarkerKey, int] = {}
+        payload: List[Dict[str, Any]] = []
+
+        for key in marker_occurrences:
+            entry = refs_by_key.get(key)
+            if not entry:
+                continue
+            occ_index = occurrence_counts.get(key, 0)
+            occurrence_counts[key] = occ_index + 1
+            payload.append(entry.to_payload(turn_prefix=ref_turn_counter, occurrence_index=occ_index))
+
+        # Include any references that were not present in the inline text (e.g. citation-only)
+        for entry in ordered_entries:
+            if occurrence_counts.get(entry.key, 0) == 0:
+                payload.append(entry.to_payload(turn_prefix=ref_turn_counter, occurrence_index=0))
+                occurrence_counts[entry.key] = 1
+
+        for ref in payload:
+            title_val = (ref.get("title") or "").strip()
+            text_val = (ref.get("text") or "").strip()
+            url_val = (ref.get("url") or "").strip()
+            has_metadata = False
+            if url_val:
+                has_metadata = True
+            elif title_val and not title_val.startswith("Metadata missing"):
+                has_metadata = True
+            elif text_val:
+                has_metadata = True
+            if not has_metadata:
+                ref["skip_citation"] = True
+
+        seq_occurrences: Dict[int, List[Dict[str, Any]]] = {}
+        for ref in payload:
+            seq_occurrences.setdefault(int(ref.get("seq", 0)), []).append(ref)
+
+        for refs in seq_occurrences.values():
+            if len(refs) == 1:
+                refs[0]["occurrence_label"] = ""
+                continue
+            labels = _generate_occurrence_labels(len(refs))
+            for label, ref in zip(labels, refs):
+                ref["occurrence_label"] = label
 
         identity_seq_map: Dict[tuple, int] = {}
         for ref in payload:
@@ -123,6 +173,7 @@ class CitationProcessor:
                 ref.get("ref_id", 0),
                 ref.get("seq", 0),
                 bool(ref.get("is_fallback")),
+                ref.get("source_label"),
             )
             if identity in identity_seq_map:
                 ref["seq"] = identity_seq_map[identity]
@@ -133,33 +184,38 @@ class CitationProcessor:
     # ------------------------------------------------------------------
     # Marker extraction and initialization
     # ------------------------------------------------------------------
-    def _seed_entries(self, turn: Any) -> Tuple[Dict[MarkerKey, ReferenceEntry], int]:
-        seq_map = self._extract_marker_seq_map(turn)
+    def _seed_entries(self, turn: Any) -> Tuple[Dict[MarkerKey, ReferenceEntry], int, List[MarkerKey]]:
+        seq_map, occurrences = self._extract_marker_seq_map(turn)
         entries = {key: ReferenceEntry(key=key, seq=seq) for key, seq in seq_map.items()}
         next_seq = max(seq_map.values(), default=0) + 1
-        return entries, next_seq
+        return entries, next_seq, occurrences
 
-    def _extract_marker_seq_map(self, turn: Any) -> Dict[MarkerKey, int]:
+    def _extract_marker_seq_map(self, turn: Any) -> Tuple[Dict[MarkerKey, int], List[MarkerKey]]:
         message = getattr(turn, "message", None)
         if message is None:
-            return {}
+            return {}, []
 
+        text = ""
         dc = DocumentContext.get()
         if dc:
             text = dc.extract_text_from_message(message)
-            seq_map = dc.extract_marker_seq_map_from_text(text)
-            if seq_map:
-                return {(int(k[0]), int(k[1]), int(k[2])): v for k, v in seq_map.items()}
+        if not text:
+            text = self._fallback_text_from_message(message)
+        return self._parse_markers_from_text(text)
 
-        text = self._fallback_text_from_message(message)
+    def _parse_markers_from_text(self, text: str) -> Tuple[Dict[MarkerKey, int], List[MarkerKey]]:
         seq_map: Dict[MarkerKey, int] = {}
+        occurrences: List[MarkerKey] = []
         seq = 1
+        if not text:
+            return seq_map, occurrences
         for match in MARKER_PATTERN.finditer(text):
             key = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+            occurrences.append(key)
             if key not in seq_map:
                 seq_map[key] = seq
                 seq += 1
-        return seq_map
+        return seq_map, occurrences
 
     def _fallback_text_from_message(self, message: Any) -> str:
         content = getattr(message, "content", None)
@@ -448,14 +504,16 @@ class CitationProcessor:
             if not entry.title:
                 entry.title = f"Metadata missing for ref_id {ref_id}"
 
-    def _extract_sources_metadata(self, turn: Any) -> Dict[int, str]:
+    def _extract_sources_metadata(self, turn: Any) -> Tuple[Dict[MarkerKey, str], Dict[int, str]]:
         cache_key = getattr(turn, 'id', None)
         if cache_key and cache_key in self._source_metadata_cache:
-            return self._source_metadata_cache[cache_key]
+            cached = self._source_metadata_cache[cache_key]
+            return cached["per_key"], cached["per_ref"]
 
         message = getattr(turn, 'message', None)
         if message is None:
-            return {}
+            empty = ({}, {})
+            return empty
 
         text = ""
         dc = DocumentContext.get()
@@ -464,18 +522,21 @@ class CitationProcessor:
         if not text:
             text = self._fallback_text_from_message(message)
         if not text:
-            return {}
+            empty = ({}, {})
+            return empty
 
         lower_text = text.lower()
         idx = lower_text.find('sources:')
         if idx == -1:
-            return {}
+            empty = ({}, {})
+            return empty
         sources_section = text[idx:]
 
         # Match numbered source entries
         pattern = re.compile(r'^\s*\d+\.\s*(.+?)(?=(?:\n\s*\d+\.|\Z))', re.MULTILINE | re.DOTALL)
         marker_pattern = re.compile(r'【(\d+)†L(\d+)-L(\d+)】')
-        metadata: Dict[int, str] = {}
+        per_key: Dict[MarkerKey, str] = {}
+        per_ref: Dict[int, str] = {}
 
         for match in pattern.finditer(sources_section):
             entry_text = match.group(1).strip()
@@ -492,16 +553,20 @@ class CitationProcessor:
             cleaned = re.sub(r'\s+', ' ', cleaned)
             if not cleaned:
                 continue
-            for ref_id_str, *_ in refs:
+            for ref_id_str, start_line_str, end_line_str in refs:
                 try:
                     ref_id = int(ref_id_str)
+                    start_line = int(start_line_str)
+                    end_line = int(end_line_str)
                 except (TypeError, ValueError):
                     continue
-                metadata.setdefault(ref_id, cleaned)
+                key = (ref_id, start_line, end_line)
+                per_key.setdefault(key, cleaned)
+                per_ref.setdefault(ref_id, cleaned)
 
         if cache_key:
-            self._source_metadata_cache[cache_key] = metadata
-        return metadata
+            self._source_metadata_cache[cache_key] = {"per_key": per_key, "per_ref": per_ref}
+        return per_key, per_ref
 
     def _assign_sequences(
         self,
@@ -548,6 +613,7 @@ class CitationProcessor:
             entry.key[0],
             entry.seq,
             entry.is_fallback,
+            entry.source_label,
         )
 
 
@@ -558,24 +624,37 @@ def _reference_identity_from_fields(
     ref_id: int,
     seq: int,
     is_fallback: bool = False,
+    source_label: Any = "",
 ) -> tuple:
     url_norm = _normalize_url(url)
-    fragment = ''
-    base_url = url_norm
-    if url_norm and '#:~:text=' in url_norm:
-        base_url, fragment = url_norm.split('#:~:text=', 1)
+    base_url = url_norm.split('#', 1)[0] if url_norm else ''
     title_norm = _normalize_text(title)
     text_norm = _normalize_text(text)
     if not title_norm and not text_norm and is_fallback:
         title_norm = text_norm
-    # Treat very short snippets/fragments as the same reference (e.g. one-word highlights)
-    words = text_norm.split()
-    if fragment and len(fragment) <= 120 and len(words) <= 3:
-        fragment = ''
-        text_norm = ''
-    if base_url or title_norm or text_norm:
-        return (base_url, fragment, title_norm or text_norm or '')
+    label_norm = _normalize_text(source_label)
+    identity_text = title_norm or text_norm or ''
+    if label_norm and label_norm != identity_text:
+        identity_text = f"{identity_text}::{label_norm}" if identity_text else label_norm
+    if base_url or identity_text:
+        return (base_url, identity_text)
     return (ref_id, seq)
+
+
+def _generate_occurrence_labels(count: int) -> List[str]:
+    """Generate stable alphabetic labels (a, b, ...)."""
+    alphabet = "abcdefghijklmnopqrstuvwxyz"
+    labels: List[str] = []
+    for idx in range(count):
+        label = ""
+        n = idx
+        while True:
+            label = alphabet[n % 26] + label
+            n = n // 26 - 1
+            if n < 0:
+                break
+        labels.append(label)
+    return labels
 
 
 def _to_dict(value: Any) -> Dict[str, Any]:
