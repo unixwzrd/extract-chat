@@ -5,11 +5,24 @@ This module implements the formatter that converts ChatGPT conversations
 to HTML format with proper styling and structure.
 """
 
+import string
+from html import escape
 from typing import Any, Dict, List, Optional
 
+try:
+    import markdown as _markdown_lib
+except ImportError:  # pragma: no cover - optional dependency
+    _markdown_lib = None
+
+
+def _ensure_trailing_period(value: str) -> str:
+    text = value.strip()
+    if not text:
+        return ''
+    return text if text.endswith('.') else f"{text}."
+
 # ftfy import moved to base class
-from pylib.css_manager import create_inline_css_style, get_css_content
-from pylib.schemas import Conversation
+from extract_chat.css_manager import create_inline_css_style, get_css_content
 
 from .base import BaseFormatter, FormattingError
 
@@ -32,7 +45,20 @@ class HTMLFormatter(BaseFormatter):
     def get_mime_type(self) -> str:
         return "text/html"
 
-    def format_conversation(self, conversation: Conversation) -> str:
+    def _format_timestamp(self, timestamp):
+        """Format timestamp for display (accepts epoch floats)."""
+        if timestamp is None:
+            return ""
+        try:
+            from datetime import datetime
+            return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+        except (ValueError, TypeError):
+            try:
+                return str(timestamp)
+            except Exception:
+                return ""
+
+    def format_conversation(self, conversation: Any) -> str:
         """
         Format a conversation to HTML.
 
@@ -80,6 +106,11 @@ class HTMLFormatter(BaseFormatter):
                 if block_html:
                     html_parts.append(block_html)
 
+            # Append a global References section (HTML) aggregating across assistant blocks
+            refs_html = self._generate_global_references_section_html(content_blocks)
+            if refs_html:
+                html_parts.append(refs_html)
+
             # Close container and body
             html_parts.append('</div>')
             html_parts.append('</body>')
@@ -92,7 +123,7 @@ class HTMLFormatter(BaseFormatter):
         except Exception as e:
             raise FormattingError(f"Failed to format conversation: {str(e)}", self)
 
-    def format_document(self, conversation: Conversation) -> str:
+    def format_document(self, conversation: Any) -> str:
         """Wrapper for compatibility with BaseFormatter."""
         return self.format_conversation(conversation)
 
@@ -120,11 +151,11 @@ class HTMLFormatter(BaseFormatter):
             lines.append('<div class="metadata">')
             
             if metadata.get('create_time'):
-                create_date = metadata['create_time'].strftime('%Y-%m-%d %H:%M:%S')
+                create_date = self._format_timestamp(metadata['create_time'])
                 lines.append(f'<p><strong>Created:</strong> {create_date}</p>')
             
             if metadata.get('update_time'):
-                update_date = metadata['update_time'].strftime('%Y-%m-%d %H:%M:%S')
+                update_date = self._format_timestamp(metadata['update_time'])
                 lines.append(f'<p><strong>Updated:</strong> {update_date}</p>')
             
             if metadata.get('model'):
@@ -154,25 +185,34 @@ class HTMLFormatter(BaseFormatter):
 
     def _format_text_block_dict(self, block: Dict[str, Any]) -> str:
         """Format a text block dictionary to HTML."""
-        role = block.get('role', 'unknown')
+        role = block.get('role') or block.get('type', 'unknown')
         content = block.get('content', '')
-        timestamp = block.get('timestamp')
-        
+        metadata = block.get('metadata', {}) or {}
+        timestamp = metadata.get('timestamp') or block.get('timestamp')
+        turn_id = metadata.get('turn_id') or block.get('block_id', 'unknown')
+
         # Determine CSS class based on role
         css_class = f"{role.lower()}-block"
-        
+
         html_parts = [f'<div class="block {css_class}">']
-        
+
         # Add header with role and timestamp
-        block_id = block.get('block_id', 'unknown')
+        role_title = (role or 'unknown').title()
         if timestamp:
-            header_parts = [f'<h3>{role.title()} ({timestamp.strftime("%Y-%m-%d %H:%M:%S")}) [Turn: {block_id}]</h3>']
+            header_parts = [
+                f'<h3>{role_title} ({self._format_timestamp(timestamp)}) '
+                f'[Turn: {escape(str(turn_id))}]</h3>'
+            ]
         else:
-            header_parts = [f'<h3>{role.title()} [Turn: {block_id}]</h3>']
+            header_parts = [f'<h3>{role_title} [Turn: {escape(str(turn_id))}]</h3>']
         
         html_parts.append(''.join(header_parts))
         
         # Add content with markdown conversion
+        # Replace inline markers with cite superscripts if we have references
+        refs_block = block.get('references_table')
+        if content and refs_block and refs_block.get('references'):
+            content = self._replace_inline_markers_with_seq(content, refs_block.get('references', []))
         converted_content = self._convert_markdown_to_html(content)
         # Clean up extra whitespace and newlines
         converted_content = self._clean_html_content(converted_content)
@@ -187,25 +227,214 @@ class HTMLFormatter(BaseFormatter):
         
         return '\n'.join(html_parts)
 
+    def _replace_inline_markers_with_seq(self, text: str, references: list) -> str:
+        """Replace 【ref_id†Lstart-Lend】 with HTML superscript links using seq and unique_id."""
+        try:
+            import re as _re
+            key_to_info = {}
+            for r in references:
+                key = (int(r.get('ref_id')), int(r.get('start_line')), int(r.get('end_line')))
+                key_to_info[key] = (int(r.get('seq')), r.get('unique_id'))
+            pattern = r'【(\d+)†L(\d+)-L(\d+)】'
+
+            def _repl(m):
+                ref_id = int(m.group(1))
+                s = int(m.group(2))
+                e = int(m.group(3))
+                info = key_to_info.get((ref_id, s, e))
+                if not info:
+                    return m.group(0)
+                seq, unique_id = info
+                return f'<sup id="cite-{unique_id}"><a href="#ref-{unique_id}">{seq}</a></sup>'
+
+            return _re.sub(pattern, _repl, text)
+        except Exception:
+            return text
+
+    def _generate_global_references_section_html(self, content_blocks: List[Dict[str, Any]]) -> str:
+        """Aggregate references across assistant blocks and render as an HTML section."""
+        try:
+            groups: Dict[int, Dict[str, Any]] = {}
+            for block in content_blocks:
+                if block.get('type') != 'assistant':
+                    continue
+                refs_block = block.get('references_table') or {}
+                refs_list = refs_block.get('references') or []
+                turn_num = block.get('metadata', {}).get('reference_turn_number')
+                if not refs_list or not turn_num:
+                    continue
+                for ref in refs_list:
+                    ref_id = ref.get('ref_id')
+                    if ref_id is None:
+                        continue
+                    ref_id = int(ref_id)
+                    entry = dict(ref)
+                    entry['turn_num'] = int(turn_num)
+                    group = groups.setdefault(ref_id, {
+                        'ref_id': ref_id,
+                        'entries': [],
+                        'meta': None,
+                        'best_score': -1,
+                    })
+                    group['entries'].append(entry)
+                    score = self._score_reference_entry(entry)
+                    if score > group['best_score']:
+                        group['meta'] = entry
+                        group['best_score'] = score
+
+            if not groups:
+                return ""
+
+            sorted_groups = sorted(groups.values(), key=self._reference_sort_key)
+
+            parts: List[str] = [
+                '<div class="block system-block">',
+                '<div class="block-header">References</div>',
+                '<div class="content">',
+                '<ol class="references">',
+            ]
+
+            for index, group in enumerate(sorted_groups, start=1):
+                meta = group.get('meta') or {}
+                occurrences = sorted(group['entries'], key=lambda e: int(e.get('seq', 10**9)))
+                if not occurrences:
+                    continue
+
+                anchor_html = ''.join(
+                    f'<a id="ref-{occ.get("unique_id")}"></a>'
+                    for occ in occurrences if occ.get('unique_id')
+                )
+
+                citation_label = f"Ref {index}"
+                apa_text = self._format_apa_reference_entry(meta, html=True)
+                snippet = (meta.get('text') or '').strip().replace('\n', ' ')
+                snippet_html = f'<span class="excerpt">“{escape(snippet)}”</span>' if snippet else ''
+
+                letters = self._backlink_labels(len(occurrences))
+                backlinks: List[str] = []
+                for idx, occ in enumerate(occurrences):
+                    uid = occ.get('unique_id')
+                    if not uid:
+                        continue
+                    label = letters[idx]
+                    link = f'<a class="backref" href="#cite-{uid}">{label}^</a>'
+                    backlinks.append(link)
+
+                body_parts = [f'<strong>{escape(citation_label)}.</strong> {apa_text}']
+                if snippet_html:
+                    body_parts.append(snippet_html)
+                if backlinks:
+                    body_parts.append(' '.join(backlinks))
+                body = ' '.join(part for part in body_parts if part)
+                parts.append(f'<li>{anchor_html} {body}</li>')
+
+            parts.append('</ol>')
+            parts.append('</div>')
+            parts.append('</div>')
+            return '\n'.join(parts)
+        except Exception:
+            return ""
+
+    def _score_reference_entry(self, entry: Dict[str, Any]) -> int:
+        score = 0
+        if (entry.get('title') or '').strip():
+            score += 4
+        if (entry.get('url') or '').strip():
+            score += 3
+        if (entry.get('text') or '').strip():
+            score += 2
+        if entry.get('attribution'):
+            score += 1
+        return score
+
+    def _reference_sort_key(self, group: Dict[str, Any]) -> tuple:
+        entries = group.get('entries') or []
+        if not entries:
+            return (10**9, group.get('ref_id', 10**9))
+        first = min(entries, key=lambda e: int(e.get('seq', 10**9)))
+        return (int(first.get('seq', 10**9)), group.get('ref_id', 10**9))
+
+    def _backlink_labels(self, count: int) -> List[str]:
+        labels = []
+        alphabet = string.ascii_lowercase
+        for idx in range(count):
+            label = ''
+            n = idx
+            while True:
+                label = alphabet[n % 26] + label
+                n = n // 26 - 1
+                if n < 0:
+                    break
+            labels.append(label)
+        return labels
+
+    def _format_apa_reference_entry(self, info: Dict[str, Any], html: bool) -> str:
+        raw_title = (info.get('title') or '').strip()
+        if not raw_title:
+            raw_title = (info.get('text') or '').strip()
+        if not raw_title:
+            raw_title = (info.get('url') or '').strip()
+        title = raw_title or 'Untitled source'
+        if title == 'Untitled source':
+            ref_id = info.get('ref_id')
+            turn_num = info.get('turn_num')
+            if ref_id is not None:
+                if turn_num is not None:
+                    title = f"Reference {ref_id} (Turn {turn_num})"
+                else:
+                    title = f"Reference {ref_id}"
+        url = (info.get('url') or '').strip()
+        pub_date = info.get('pub_date')
+        year = self._extract_year(pub_date)
+        year_fragment = f"({year})." if year else "(n.d.)."
+
+        if html and url:
+            title_fmt = f"<a href=\"{url}\"><em>{title}</em></a>"
+        else:
+            title_fmt = f"<em>{title}</em>" if html else title
+
+        parts: List[str] = []
+        parts.append(year_fragment)
+        parts.append(title_fmt)
+
+        return ' '.join(p.strip() for p in parts if p).strip()
+
+    def _extract_year(self, value: Any) -> Optional[str]:
+        if not value:
+            return None
+        try:
+            import re as _re
+            match = _re.search(r'(\\d{4})', str(value))
+            if match:
+                return match.group(1)
+        except Exception:
+            return None
+        return None
+
     def _format_code_block_dict(self, block: Dict[str, Any]) -> str:
         """Format a code block dictionary to HTML."""
-        role = block.get('role', 'unknown')
+        role = block.get('role') or block.get('type', 'unknown')
         content = block.get('content', '')
         language = block.get('language', '')
-        timestamp = block.get('timestamp')
-        
+        metadata = block.get('metadata', {}) or {}
+        timestamp = metadata.get('timestamp') or block.get('timestamp')
+
         # Content is already normalized at the schema level
-        
+
         css_class = f"{role.lower()}-block"
-        
+
         html_parts = [f'<div class="block {css_class}">']
-        
+
         # Add header
-        block_id = block.get('block_id', 'unknown')
+        turn_id = metadata.get('turn_id') or block.get('block_id', 'unknown')
+        role_title = (role or 'unknown').title()
         if timestamp:
-            header_parts = [f'<h3>{role.title()} - Code ({timestamp.strftime("%Y-%m-%d %H:%M:%S")}) [Turn: {block_id}]</h3>']
+            header_parts = [
+                f'<h3>{role_title} - Code ({self._format_timestamp(timestamp)}) '
+                f'[Turn: {escape(str(turn_id))}]</h3>'
+            ]
         else:
-            header_parts = [f'<h3>{role.title()} - Code [Turn: {block_id}]</h3>']
+            header_parts = [f'<h3>{role_title} - Code [Turn: {escape(str(turn_id))}]</h3>']
         
         if language:
             header_parts[0] = header_parts[0].replace('</h3>', f' ({language})</h3>')
@@ -225,18 +454,22 @@ class HTMLFormatter(BaseFormatter):
         tool_name = block.get('tool_name', 'unknown_tool')
         tool_input = block.get('tool_input', {})
         tool_output = block.get('tool_output', {})
-        timestamp = block.get('timestamp')
-        
+        metadata = block.get('metadata', {}) or {}
+        timestamp = metadata.get('timestamp') or block.get('timestamp')
+
         css_class = f"{role.lower()}-block"
-        
+
         html_parts = [f'<div class="block {css_class}">']
-        
+
         # Add header
-        block_id = block.get('block_id', 'unknown')
+        turn_id = metadata.get('turn_id') or block.get('block_id', 'unknown')
         if timestamp:
-            header_parts = [f'<h3>Tool Call: {tool_name} ({self._format_timestamp(timestamp)}) [Turn: {block_id}]</h3>']
+            header_parts = [
+                f'<h3>Tool Call: {escape(str(tool_name))} '
+                f'({self._format_timestamp(timestamp)}) [Turn: {escape(str(turn_id))}]</h3>'
+            ]
         else:
-            header_parts = [f'<h3>Tool Call: {tool_name} [Turn: {block_id}]</h3>']
+            header_parts = [f'<h3>Tool Call: {escape(str(tool_name))} [Turn: {escape(str(turn_id))}]</h3>']
         
         html_parts.append(''.join(header_parts))
         
@@ -422,50 +655,49 @@ class HTMLFormatter(BaseFormatter):
         """
         if not text:
             return ""
-        
-        # If text already contains HTML tags (like <pre><code>), don't process it further
+
         if '<pre>' in text or '<code>' in text:
             return text
-        
-        # Convert unordered lists
+
+        if _markdown_lib:
+            try:
+                return _markdown_lib.markdown(text, extensions=['tables', 'fenced_code', 'toc'])
+            except Exception:  # pragma: no cover - fallback below
+                pass
+
+        # Basic fallback for headings and paragraphs if markdown library not available
         lines = text.split('\n')
-        html_lines = []
+        html_lines: List[str] = []
         in_list = False
-        current_paragraph = []
-        
         for line in lines:
             stripped = line.strip()
-            
-            # Handle unordered list items
-            if stripped.startswith('- ') or stripped.startswith('* '):
-                # Close any open paragraph
-                if current_paragraph:
-                    html_lines.append(f'<p>{" ".join(current_paragraph)}</p>')
-                    current_paragraph = []
-                
+            if not stripped:
+                if in_list:
+                    html_lines.append('</ul>')
+                    in_list = False
+                html_lines.append('')
+                continue
+
+            if stripped.startswith('#'):
+                if in_list:
+                    html_lines.append('</ul>')
+                    in_list = False
+                level = len(stripped) - len(stripped.lstrip('#'))
+                level = max(1, min(level, 6))
+                content = stripped[level:].strip()
+                html_lines.append(f'<h{level}>{escape(content)}</h{level}>')
+            elif stripped.startswith(('- ', '* ')):
                 if not in_list:
                     html_lines.append('<ul>')
                     in_list = True
-                html_lines.append(f'<li>{stripped[2:]}</li>')
+                html_lines.append(f'<li>{escape(stripped[2:].strip())}</li>')
             else:
                 if in_list:
                     html_lines.append('</ul>')
                     in_list = False
-                
-                # Add to current paragraph (don't create new paragraph for every line)
-                if stripped:
-                    current_paragraph.append(stripped)
-                elif current_paragraph:
-                    # Empty line ends current paragraph
-                    html_lines.append(f'<p>{" ".join(current_paragraph)}</p>')
-                    current_paragraph = []
-        
-        # Close any open paragraph
-        if current_paragraph:
-            html_lines.append(f'<p>{" ".join(current_paragraph)}</p>')
-        
-        # Close any open list
+                html_lines.append(f'<p>{escape(stripped)}</p>')
+
         if in_list:
             html_lines.append('</ul>')
-        
-        return '\n'.join(html_lines)
+
+        return '\n'.join(filter(None, html_lines))

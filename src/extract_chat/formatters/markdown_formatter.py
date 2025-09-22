@@ -4,9 +4,20 @@ Markdown formatter for ChatGPT conversations.
 This module provides a formatter that converts ChatGPT conversations to Markdown format.
 """
 
-from typing import Any, Dict, List
+import logging
+import string
+from typing import Any, Dict, List, Optional
 
 from .base import BaseFormatter, FormattingError
+
+logger = logging.getLogger(__name__)
+
+
+def _ensure_trailing_period(value: str) -> str:
+    text = value.strip()
+    if not text:
+        return ''
+    return text if text.endswith('.') else f"{text}."
 
 # ftfy import moved to base class
 
@@ -97,6 +108,7 @@ class MarkdownFormatter(BaseFormatter):
         try:
             # Build markdown content
             lines = []
+            verbose = bool(self.config.get('verbose'))
 
             # Add title
             if conversation.get('title'):
@@ -144,18 +156,18 @@ class MarkdownFormatter(BaseFormatter):
             # Process content blocks - separate conversation context from conversation
             content_blocks = conversation.get('content_blocks', [])
             
-            print(f"DEBUG: Total content blocks: {len(content_blocks)}")
+            logger = logging.getLogger(__name__)
+            logger.debug("Total content blocks: %d", len(content_blocks))
             
             for block in content_blocks:
-                print(f"DEBUG: Processing block - type: {block.get('type')}, "
-                      f"turn_id: {block.get('metadata', {}).get('turn_id')}")
+                logger.debug("Processing block - type: %s, turn_id: %s", block.get('type'), block.get('metadata', {}).get('turn_id'))
                 if block.get('type') == 'conversation_context':
                     conversation_context_blocks.append(block)
                 else:
                     conversation_blocks.append(block)
             
-            print(f"DEBUG: Conversation context blocks: {len(conversation_context_blocks)}")
-            print(f"DEBUG: Conversation blocks: {len(conversation_blocks)}")
+            logger.debug("Conversation context blocks: %d", len(conversation_context_blocks))
+            logger.debug("Conversation blocks: %d", len(conversation_blocks))
 
             # Add System Context section if we have conversation context with content
             context_has_content = False
@@ -176,14 +188,13 @@ class MarkdownFormatter(BaseFormatter):
                 for block in conversation_context_blocks:
                     turn_id = block.get('metadata', {}).get('turn_id')
                     content_length = len(block.get('content', ''))
-                    print(f"DEBUG: Formatting conversation context block - turn_id: {turn_id}, "
-                          f"content length: {content_length}")
+                    logger.debug("Formatting conversation context block - turn_id: %s, content length: %d", turn_id, content_length)
                     context_lines = self._format_conversation_context_block_dict(block)
                     if context_lines:
                         lines.append(context_lines)
                         lines.append("")
                     else:
-                        print(f"DEBUG: No context lines returned for block {block.get('metadata', {}).get('turn_id')}")
+                        logger.debug("No context lines returned for block %s", block.get('metadata', {}).get('turn_id'))
                 
                 lines.append("---")
                 lines.append("")
@@ -195,11 +206,11 @@ class MarkdownFormatter(BaseFormatter):
             # Process conversation blocks
             for i, block in enumerate(conversation_blocks):
                 block_type = block.get('type', 'text')
-                print(f"DEBUG: Processing block {i}: type={block_type}, turn_id={block.get('metadata', {}).get('turn_id')}")
+                logger.debug("Processing block %d: type=%s, turn_id=%s", i, block_type, block.get('metadata', {}).get('turn_id'))
                 
                 # Check if this block has internal dialogue
                 if 'internal_dialogue' in block and block['internal_dialogue']:
-                    print(f"DEBUG: Block {i} has internal_dialogue with {len(block['internal_dialogue'])} items")
+                    logger.debug("Block %d has internal_dialogue with %d items", i, len(block['internal_dialogue']))
                 
                 # Handle user blocks
                 if block_type == 'user':
@@ -214,7 +225,7 @@ class MarkdownFormatter(BaseFormatter):
                 
                 # Handle assistant blocks with internal dialogue (like the backup)
                 elif block_type == 'assistant' and 'internal_dialogue' in block and block['internal_dialogue']:
-                    print(f"DEBUG: Processing assistant block with internal dialogue: {len(block['internal_dialogue'])} items")
+                    logger.debug("Processing assistant block with internal dialogue: %d items", len(block['internal_dialogue']))
                     
                     # Render assistant label (header)
                     turn_id = block.get('metadata', {}).get('turn_id', 'unknown')
@@ -270,9 +281,12 @@ class MarkdownFormatter(BaseFormatter):
                                 lines.append("<br>")  # Add HTML break for guaranteed separation
                                 lines.append("")  # Add line break after internal dialogue
                     
-                    # Now render the assistant's visible response text (content)
+                    # Now render the assistant's visible response text (content) with inline refs replacement
                     content = block.get('content', '')
                     if content:
+                        refs_block = block.get('references_table')
+                        if refs_block and refs_block.get('references'):
+                            content = self._replace_inline_markers_with_seq(content, refs_block.get('references', []))
                         lines.append(content)
                         lines.append("")
                     continue
@@ -300,20 +314,20 @@ class MarkdownFormatter(BaseFormatter):
                     lines.append("")
                     lines.append(global_refs_section)
             except Exception as e:
-                print(f"DEBUG: Failed to build global references section: {e}")
+                logger.debug("Failed to build global references section: %s", e)
 
             # Apply final Unicode normalization to the entire output
-            print(f"DEBUG: Final lines count: {len(lines)}")
-            print("DEBUG: Looking for internal dialogue in lines...")
+            logger.debug("Final lines count: %d", len(lines))
+            logger.debug("Looking for internal dialogue in lines...")
             internal_dialogue_count = 0
             for i, line in enumerate(lines):
                 if "Internal Dialogue" in line or "Reasoning" in line:
                     internal_dialogue_count += 1
                     if internal_dialogue_count <= 3:  # Only show first 3 instances
-                        print(f"DEBUG: Found internal dialogue at line {i}: {line[:50]}...")
-            print(f"DEBUG: Total internal dialogue instances found: {internal_dialogue_count}")
+                        logger.debug("Found internal dialogue at line %d: %s...", i, line[:50])
+            logger.debug("Total internal dialogue instances found: %d", internal_dialogue_count)
             final_output = "\n".join(lines)
-            print(f"DEBUG: Final output length: {len(final_output)}")
+            logger.debug("Final output length: %d", len(final_output))
             return self._normalize_text(final_output)
 
         except Exception as e:
@@ -377,7 +391,7 @@ class MarkdownFormatter(BaseFormatter):
         timestamp = block.get('metadata', {}).get('timestamp')
         turn_id = block.get('metadata', {}).get('turn_id', 'unknown')
         
-        print(f"DEBUG: Formatting text block - author: {author}, turn_id: {turn_id}")
+        logging.getLogger(__name__).debug("Formatting text block - author: %s, turn_id: %s", author, turn_id)
         
         if timestamp:
             lines.append(f"### {author.title()} ({timestamp}) [Turn: {turn_id}]")
@@ -394,18 +408,22 @@ class MarkdownFormatter(BaseFormatter):
         if content:
             formatted_content = self._format_content_with_backticks(content)
             lines.append(formatted_content)
-            print(f"DEBUG: Added content for {author} block {turn_id} - length: {len(formatted_content)}")
+            logging.getLogger(__name__).debug("Added content for %s block %s - length: %d", author, turn_id, len(formatted_content))
         else:
-            print(f"DEBUG: No content for {author} block {turn_id}")
+            logging.getLogger(__name__).debug("No content for %s block %s", author, turn_id)
         
         # Do NOT render per-block references here; a single global References section is appended at the end
 
         result = "\n".join(lines)
-        print(f"DEBUG: Formatted {author} block {turn_id} - result length: {len(result)}")
+        logging.getLogger(__name__).debug("Formatted %s block %s - result length: %d", author, turn_id, len(result))
         return result
 
     def _replace_inline_markers_with_seq(self, text: str, references: list) -> str:
-        """Replace 【ref_id†Lstart-Lend】 with superscript links using seq and unique_id."""
+        """Replace markers with superscript links and cite anchors.
+
+        - Inline marker: 【ref_id†Lstart-Lend】 → <sup id="cite-{unique}"><a href="#ref-{unique}">{seq}</a></sup>
+        - This creates forward link to the reference and a cite anchor for back-links.
+        """
         try:
             import re as _re
 
@@ -425,7 +443,7 @@ class MarkdownFormatter(BaseFormatter):
                 if not info:
                     return m.group(0)
                 seq, unique_id = info
-                return f'<sup><a href="#ref-{unique_id}">{seq}</a></sup>'
+                return f'<sup id="cite-{unique_id}"><a href="#ref-{unique_id}">{seq}</a></sup>'
 
             return _re.sub(pattern, _repl, text)
         except Exception:
@@ -440,9 +458,7 @@ class MarkdownFormatter(BaseFormatter):
         citations (by seq) under each reference entry.
         """
         try:
-            from collections import defaultdict
-            groups: Dict[tuple, Dict[str, Any]] = {}
-            citations_by_group: Dict[tuple, List[Dict[str, Any]]] = defaultdict(list)
+            groups: Dict[int, Dict[str, Any]] = {}
 
             for block in conversation_blocks:
                 if block.get('type') != 'assistant':
@@ -452,62 +468,156 @@ class MarkdownFormatter(BaseFormatter):
                 turn_num = block.get('metadata', {}).get('reference_turn_number')
                 if not refs_list or not turn_num:
                     continue
-                for r in refs_list:
-                    try:
-                        ref_id = int(r.get('ref_id'))
-                    except Exception:
+                for ref in refs_list:
+                    ref_id = ref.get('ref_id')
+                    if ref_id is None:
                         continue
-                    title = (r.get('title') or '').strip()
-                    url = (r.get('url') or '').strip()
-                    key = (int(turn_num), ref_id)
-                    if key not in groups:
-                        groups[key] = {'turn_num': int(turn_num), 'ref_id': ref_id, 'title': title, 'url': url}
-                    # Prefer non-empty title/url if missing
-                    if not groups[key].get('title') and title:
-                        groups[key]['title'] = title
-                    if not groups[key].get('url') and url:
-                        groups[key]['url'] = url
-                    citations_by_group[key].append(r)
+                    ref_id = int(ref_id)
+                    entry = dict(ref)
+                    entry['turn_num'] = int(turn_num)
+                    group = groups.setdefault(ref_id, {
+                        'ref_id': ref_id,
+                        'entries': [],
+                        'meta': None,
+                        'best_score': -1,
+                    })
+                    group['entries'].append(entry)
+                    score = self._score_reference_entry(entry)
+                    if score > group['best_score']:
+                        group['meta'] = entry
+                        group['best_score'] = score
 
             if not groups:
                 return ""
 
-            # Render
-            out: List[str] = ["## References", ""]
-            # Sort by (turn_num, ref_id)
-            for key in sorted(groups.keys(), key=lambda k: (groups[k]['turn_num'], groups[k]['ref_id'])):
-                g = groups[key]
-                title = (g.get('title') or '').strip()
-                url = (g.get('url') or '').strip()
-                turn_label = g['turn_num']
-                # Reference header
-                header = f"Turn {turn_label} · Reference {g['ref_id']}"
-                if title and url:
-                    out.append(f"**[{title}]({url})**  ")
-                    out.append(f"_({header})_")
-                elif title:
-                    out.append(f"**{title}**  ")
-                    out.append(f"_({header})_")
-                else:
-                    out.append(f"**{header}**")
+            sorted_groups = sorted(groups.values(), key=self._reference_sort_key)
 
-                # Citations under this reference, sorted by seq
-                items = sorted(citations_by_group[key], key=lambda x: int(x.get('seq', 0)))
-                for r in items:
-                    unique_id = r.get('unique_id')
-                    seq = r.get('seq')
-                    text = (r.get('text') or '').strip()
-                    s = r.get('start_line')
-                    e = r.get('end_line')
-                    excerpt = f'"{text}"' if text else '(no excerpt)'
-                    out.append(f"<a id=\"ref-{unique_id}\"></a>")
-                    out.append(f"- Citation {int(seq)}: {excerpt} [↩︎](#ref-{unique_id})  ")
-                    out.append(f"  Lines: L{int(s)}–L{int(e)}")
+            out: List[str] = ["## References", ""]
+            for index, group in enumerate(sorted_groups, start=1):
+                meta = group.get('meta') or {}
+                occurrences = sorted(group['entries'], key=lambda e: int(e.get('seq', 10**9)))
+                if not occurrences:
+                    continue
+
+                anchor_ids = [occ.get('unique_id') for occ in occurrences if occ.get('unique_id')]
+                anchor_prefix = ' '.join(
+                    f"<a id=\"ref-{uid}\"></a>" for uid in anchor_ids
+                )
+
+                citation_label = f"Ref {index}"
+                apa_citation = self._format_apa_reference_entry(meta, html=False)
+
+                text_snippet = (meta.get('text') or '').strip().replace('\n', ' ')
+
+                letters = self._backlink_labels(len(occurrences))
+                backlinks: List[str] = []
+                for idx, occ in enumerate(occurrences):
+                    uid = occ.get('unique_id')
+                    if not uid:
+                        continue
+                    label = letters[idx]
+                    backlinks.append(f"[ref {label}^](#cite-{uid})")
+
+                pieces = [f"- {citation_label}. {apa_citation}"]
+                if text_snippet:
+                    pieces.append(f'"{text_snippet}"')
+                if backlinks:
+                    pieces.append(' '.join(backlinks))
+                line = ' '.join(p for p in pieces if p).strip()
+                if anchor_prefix:
+                    out.append(f"{anchor_prefix} {line}".strip())
+                else:
+                    out.append(line)
                 out.append("")
 
             return "\n".join(out)
         except Exception:
             return ""
+
+    def _score_reference_entry(self, entry: Dict[str, Any]) -> int:
+        score = 0
+        if (entry.get('title') or '').strip():
+            score += 4
+        if (entry.get('url') or '').strip():
+            score += 3
+        if (entry.get('text') or '').strip():
+            score += 2
+        if entry.get('attribution'):
+            score += 1
+        return score
+
+    def _reference_sort_key(self, group: Dict[str, Any]) -> tuple:
+        entries = group.get('entries') or []
+        if not entries:
+            return (10**9, group.get('ref_id', 10**9))
+        first = min(entries, key=lambda e: int(e.get('seq', 10**9)))
+        return (int(first.get('seq', 10**9)), group.get('ref_id', 10**9))
+
+    def _backlink_labels(self, count: int) -> List[str]:
+        labels = []
+        alphabet = string.ascii_lowercase
+        for idx in range(count):
+            label = ''
+            n = idx
+            while True:
+                label = alphabet[n % 26] + label
+                n = n // 26 - 1
+                if n < 0:
+                    break
+            labels.append(label)
+        return labels
+
+    def _format_apa_reference_entry(self, info: Dict[str, Any], html: bool) -> str:
+        """Generate a lightweight APA-style reference string."""
+        raw_title = (info.get('title') or '').strip()
+        if not raw_title:
+            raw_title = (info.get('text') or '').strip()
+        if not raw_title:
+            raw_title = (info.get('url') or '').strip()
+        title = raw_title or 'Untitled source'
+        if title == 'Untitled source':
+            ref_id = info.get('ref_id')
+            turn_num = info.get('turn_num')
+            if ref_id is not None:
+                if turn_num is not None:
+                    title = f"Reference {ref_id} (Turn {turn_num})"
+                else:
+                    title = f"Reference {ref_id}"
+        attribution = (info.get('attribution') or '').strip()
+        url = (info.get('url') or '').strip()
+        pub_date = info.get('pub_date')
+        year = self._extract_year(pub_date)
+        year_fragment = f"({year})." if year else "(n.d.)."
+
+        if html:
+            if url:
+                title_fmt = f"<a href=\"{url}\"><em>{title}</em></a>"
+            else:
+                title_fmt = f"<em>{title}</em>"
+        else:
+            if url:
+                title_fmt = f"[*{title}*]({url})"
+            else:
+                title_fmt = f"*{title}*"
+
+        parts: List[str] = []
+        parts.append(year_fragment)
+        parts.append(title_fmt)
+        # URL is already incorporated via title hyperlink when available
+
+        return ' '.join(p.strip() for p in parts if p).strip()
+
+    def _extract_year(self, value: Any) -> Optional[str]:
+        if not value:
+            return None
+        try:
+            import re as _re
+            match = _re.search(r'(\\d{4})', str(value))
+            if match:
+                return match.group(1)
+        except Exception:
+            return None
+        return None
 
     def _format_code_block_dict(self, block: Dict[str, Any]) -> str:
         """Format a code block dictionary to markdown."""
@@ -706,14 +816,16 @@ class MarkdownFormatter(BaseFormatter):
     
     def _format_internal_dialogue_block_dict(self, block: Dict[str, Any]) -> str:
         """Format an internal dialogue block as a regular turn."""
-        print(f"DEBUG: _format_internal_dialogue_block_dict called with block: {block.get('role', 'unknown')}")
+        if self.config.get('verbose'):
+            print(f"DEBUG: _format_internal_dialogue_block_dict called with block: {block.get('role', 'unknown')}")
         turn_id = block.get('metadata', {}).get('turn_id', 'unknown')
         role = block.get('role', 'assistant')
         content = block.get('content', '')
         timestamp = block.get('metadata', {}).get('timestamp')
         additional_info = block.get('additional_info', {})
         
-        print(f"DEBUG: Internal block - role: {role}, content length: {len(content)}")
+        if self.config.get('verbose'):
+            print(f"DEBUG: Internal block - role: {role}, content length: {len(content)}")
         
         # Format timestamp
         timestamp_str = ""
@@ -788,7 +900,8 @@ class MarkdownFormatter(BaseFormatter):
         lines.append("")
         
         result = "\n".join(lines)
-        print(f"DEBUG: _format_internal_dialogue_block_dict returning {len(result)} chars")
+        if self.config.get('verbose'):
+            print(f"DEBUG: _format_internal_dialogue_block_dict returning {len(result)} chars")
         return result
 
     def _format_grouped_internal_dialogue_block_dict(self, block: Dict[str, Any]) -> str:
