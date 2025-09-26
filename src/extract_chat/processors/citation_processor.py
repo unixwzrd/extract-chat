@@ -24,6 +24,7 @@ class ReferenceEntry:
     attribution: str = ""
     is_fallback: bool = False
     source_label: str = ""
+    skip_citation: bool = False
 
     def merge(self, data: Dict[str, Any]) -> None:
         """Fill empty fields without overwriting existing values."""
@@ -73,6 +74,7 @@ class ReferenceEntry:
             "attribution": self.attribution,
             "is_fallback": self.is_fallback,
             "source_label": self.source_label,
+            "skip_citation": self.skip_citation,
             "occurrence_index": occurrence_index,
         }
 
@@ -109,6 +111,8 @@ class CitationProcessor:
                     if not entry.text:
                         entry.text = fallback
                     entry.is_fallback = True
+                if entry.title and not entry.title.startswith("Metadata missing"):
+                    entry.skip_citation = False
 
         next_global_seq = self._assign_sequences(
             refs_by_key,
@@ -503,6 +507,12 @@ class CitationProcessor:
 
             if not entry.title:
                 entry.title = f"Metadata missing for ref_id {ref_id}"
+                entry.skip_citation = True
+            elif entry.title.startswith("Metadata missing"):
+                entry.skip_citation = True
+            elif not any([entry.url, entry.text, entry.source_label]):
+                # No usable bibliographic data, suppress citation
+                entry.skip_citation = True
 
     def _extract_sources_metadata(self, turn: Any) -> Tuple[Dict[MarkerKey, str], Dict[int, str]]:
         cache_key = getattr(turn, 'id', None)

@@ -107,12 +107,25 @@ def replace_inline_citation_markers(
 
     queue_by_key: Dict[tuple[int, int, int], Deque[tuple[int, Any, str]]] = {}
     suppressed_keys: set[tuple[int, int, int]] = set()
+
+    seen_seq_order: List[int] = []
+    for ref in references:
+        if ref.get("skip_citation"):
+            continue
+        try:
+            seq_val = int(ref.get("seq"))
+        except (TypeError, ValueError):
+            continue
+        if seq_val not in seen_seq_order:
+            seen_seq_order.append(seq_val)
+    seq_map = {orig: idx + 1 for idx, orig in enumerate(sorted(seen_seq_order))}
+
     for ref in references:
         try:
             ref_id = int(ref.get("ref_id"))
             start = int(ref.get("start_line"))
             end = int(ref.get("end_line"))
-            seq_value = int(ref.get("seq"))
+            seq_orig = int(ref.get("seq"))
         except (TypeError, ValueError):
             continue
         unique_id = ref.get("unique_id")
@@ -120,6 +133,8 @@ def replace_inline_citation_markers(
         if ref.get("skip_citation"):
             suppressed_keys.add((ref_id, start, end))
             continue
+        seq_value = seq_map.get(seq_orig, seq_orig)
+        ref["seq"] = seq_value
         queue = queue_by_key.setdefault((ref_id, start, end), deque())
         queue.append((seq_value, unique_id, label))
 
@@ -131,6 +146,16 @@ def replace_inline_citation_markers(
     last_key: tuple[int, int, int] | None = None
     last_seq: int | None = None
     last_pos: int | None = None
+
+    def _emit_anchor(unique_id: str | None) -> str:
+        if not unique_id:
+            return ""
+        return f'<a id="ref-source-{unique_id}"></a>'
+
+    def _emit_sup(seq: int, unique_id: str | None) -> str:
+        if not unique_id:
+            return f'<sup>{seq}</sup>'
+        return f'<sup id="ref-source-{unique_id}"><a href="#ref-target-{unique_id}">{seq}</a></sup>'
 
     def _repl(match: re.Match[str]) -> str:
         nonlocal last_key, last_seq, last_pos
@@ -145,14 +170,14 @@ def replace_inline_citation_markers(
             return match.group(0)
         seq, unique_id, label = queue.popleft()
         if last_key and last_key[0] == ref_id and abs(start_line - last_key[1]) <= 3 and abs(end_line - last_key[2]) <= 3:
-            return f'<a id="ref-source-{unique_id}"></a>'
+            return _emit_anchor(unique_id)
         if last_seq is not None and seq == last_seq and last_pos is not None and match.start() - last_pos < 50:
             last_key = key
-            return f'<a id="ref-source-{unique_id}"></a>'
+            return _emit_anchor(unique_id)
         last_key = key
         last_seq = seq
         last_pos = match.start()
-        return f'<sup id="ref-source-{unique_id}"><a href="#ref-target-{unique_id}">{seq}</a></sup>'
+        return _emit_sup(seq, unique_id)
 
     try:
         result = re.sub(pattern, _repl, text)

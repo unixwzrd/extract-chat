@@ -24,6 +24,7 @@ def _ensure_trailing_period(value: str) -> str:
         return ''
     return text if text.endswith('.') else f"{text}."
 
+
 # ftfy import moved to base class
 
 
@@ -412,6 +413,8 @@ class MarkdownFormatter(BaseFormatter):
             content = replace_inline_citation_markers(content, refs_block.get('references', []))
         if content:
             formatted_content = self._format_content_with_backticks(content)
+            if '**Sources:**' in formatted_content:
+                formatted_content = formatted_content.split('**Sources:**', 1)[0].rstrip()
             lines.append(formatted_content)
             logging.getLogger(__name__).debug("Added content for %s block %s - length: %d", author, turn_id, len(formatted_content))
         else:
@@ -423,7 +426,10 @@ class MarkdownFormatter(BaseFormatter):
         logging.getLogger(__name__).debug("Formatted %s block %s - result length: %d", author, turn_id, len(result))
         return result
 
-    def _generate_global_references_section(self, conversation_blocks: List[Dict[str, Any]]) -> str:
+    def _generate_global_references_section(
+        self,
+        conversation_blocks: List[Dict[str, Any]],
+    ) -> str:
         """Aggregate references across all assistant blocks and render a final '## References' section.
 
         Group by (reference_turn_number, ref_id) so anchors remain unique per turn, and list
@@ -444,6 +450,11 @@ class MarkdownFormatter(BaseFormatter):
                 anchor_ids = [occ.get('unique_id') for occ in occurrences if occ.get('unique_id')]
                 anchor_prefix = ' '.join(
                     f"<a id=\"ref-target-{uid}\"></a>" for uid in anchor_ids
+                )
+                source_anchors = ' '.join(
+                    f"<a id=\"ref-source-{(occ.get('unique_id') or '').strip()}\"></a>"
+                    for occ in occurrences
+                    if occ.get('unique_id')
                 )
 
                 seq_values = [int(occ.get('seq', 10**9)) for occ in occurrences if occ.get('seq') is not None]
@@ -471,6 +482,8 @@ class MarkdownFormatter(BaseFormatter):
                 if backlinks:
                     pieces.append(', '.join(backlinks))
                 line = ' '.join(p for p in pieces if p).strip()
+                if source_anchors:
+                    line = f"{source_anchors} {line}".strip()
                 if anchor_prefix:
                     out.append(f"{anchor_prefix} {line}".strip())
                 else:

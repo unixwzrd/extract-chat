@@ -1,0 +1,106 @@
+import json
+import re
+from pathlib import Path
+
+from extract_chat.context.document_context import DocumentContext
+from extract_chat.formatters.html_formatter import HTMLFormatter
+from extract_chat.formatters.markdown_formatter import MarkdownFormatter
+from extract_chat.formatters.reference_utils import (
+    extract_reference_groups,
+    replace_inline_citation_markers,
+)
+from extract_chat.processors.citation_processor import CitationProcessor
+from extract_chat.schemas.conversation import Conversation
+
+SAMPLE_PATH = Path("tmp/PA-Paper/chatgpt_convo_686ab2a1-6578-8003-b0e6-79b76323e002.json")
+TURN_ID = "c3df4f37-ab12-4ab6-a810-6b687a759b83"
+
+
+def _load_conversation() -> Conversation:
+    raw = json.loads(SAMPLE_PATH.read_text(encoding="utf-8"))
+    return Conversation.model_validate(raw)
+
+
+def _reference_group_count(references_table: dict) -> int:
+    groups = extract_reference_groups(
+        [
+            {
+                "type": "assistant",
+                "references_table": references_table,
+                "metadata": {"reference_turn_number": 1},
+            }
+        ]
+    )
+    return len(groups)
+
+
+def _markdown_reference_numbers(markdown_output: str) -> list[int]:
+    if "## References" not in markdown_output:
+        return []
+    refs_section = markdown_output.split("## References", 1)[1]
+    return [int(match) for match in re.findall(r"Ref (\d+)\.", refs_section)]
+
+
+def _html_reference_numbers(html_output: str) -> list[int]:
+    return [int(match) for match in re.findall(r"<strong>Ref (\d+)\.</strong>", html_output)]
+
+
+def test_markdown_and_html_references_are_consistent() -> None:
+    conversation = _load_conversation()
+    DocumentContext.initialize(conversation=conversation)
+    try:
+        processor = CitationProcessor()
+        references_table, _ = processor.get_references_data(
+            turn=conversation.mapping[TURN_ID],
+            ref_turn_counter=1,
+            start_seq=1,
+            existing_sequences={},
+        )
+        ctx = DocumentContext.get()
+        assert ctx is not None
+        message = conversation.mapping[TURN_ID].message
+        raw_content = ctx.extract_text_from_message(message)
+        processed_content = replace_inline_citation_markers(
+            raw_content,
+            references_table.get("references", []),
+        )
+    finally:
+        DocumentContext.reset()
+
+    conversation_block = {
+        "type": "assistant",
+        "content": processed_content,
+        "references_table": references_table,
+        "metadata": {"turn_id": TURN_ID, "reference_turn_number": 1},
+    }
+
+    markdown_formatter = MarkdownFormatter()
+    markdown_refs_section = markdown_formatter._generate_global_references_section(  # type: ignore[attr-defined]
+        [conversation_block]
+    )
+
+    html_formatter = HTMLFormatter()
+    html_refs_section, html_groups = html_formatter._generate_global_references_section_html(  # type: ignore[attr-defined]
+        [conversation_block]
+    )
+
+    assert "## References" in markdown_refs_section
+    assert "<div" in html_refs_section
+
+    markdown_refs = _markdown_reference_numbers(markdown_refs_section)
+    html_refs = _html_reference_numbers(html_refs_section)
+    expected_count = _reference_group_count(references_table)
+
+    assert processed_content
+    assert "†L" not in processed_content
+    assert "Metadata missing" not in processed_content
+    assert markdown_refs, "Markdown references section should not be empty"
+    assert html_refs, "HTML references section should not be empty"
+    assert markdown_refs == sorted(markdown_refs)
+    assert html_refs == sorted(html_refs)
+    assert markdown_refs == html_refs
+    assert len(markdown_refs) == expected_count
+    assert len(html_groups) == expected_count
+
+    assert "Metadata missing" not in markdown_refs_section
+    assert "Metadata missing" not in html_refs_section

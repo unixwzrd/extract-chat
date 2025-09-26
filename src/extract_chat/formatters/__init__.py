@@ -10,6 +10,7 @@ from extract_chat.schemas.conversation import Conversation
 
 from .base import BaseFormatter, FormattingError
 from .html_formatter import HTMLFormatter
+from .jekyll_exporter import JekyllPage, JekyllTurnExporter
 from .markdown_formatter import MarkdownFormatter
 
 # Rich metadata functions removed - not used in simplified architecture
@@ -23,6 +24,8 @@ __all__ = [
     'BaseFormatter',
     'MarkdownFormatter',
     'HTMLFormatter',
+    'JekyllTurnExporter',
+    'JekyllPage',
     'FormattingError',
     'format_to_markdown',
     'format_to_html',

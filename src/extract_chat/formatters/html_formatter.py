@@ -1,5 +1,6 @@
 """HTML formatter for extract_chat_v2."""
 
+import re
 from html import escape
 from typing import Any, Dict, List, Optional
 
@@ -14,6 +15,12 @@ def _ensure_trailing_period(value: str) -> str:
     if not text:
         return ''
     return text if text.endswith('.') else f"{text}."
+
+
+def _normalize_reference_text(value: str) -> str:
+    text = value.lower()
+    text = re.sub(r'[^a-z0-9]+', ' ', text)
+    return text.strip()
 
 # ftfy import moved to base class
 from extract_chat.css_manager import create_inline_css_style, get_css_content
@@ -106,7 +113,16 @@ class HTMLFormatter(BaseFormatter):
                     html_parts.append(block_html)
 
             # Append a global References section (HTML) aggregating across assistant blocks
-            refs_html = self._generate_global_references_section_html(content_blocks)
+            refs_html, reference_groups = self._generate_global_references_section_html(content_blocks)
+            rendered_sources = ''
+            if reference_groups:
+                sources_html = self._render_sources_list_html(reference_groups)
+                rendered_sources = (
+                    '<strong>Sources:</strong>\n'
+                    '<ul class="sources">\n'
+                    f'{sources_html}\n'
+                    '</ul>\n\n'
+                )
             if refs_html:
                 html_parts.append(refs_html)
 
@@ -117,7 +133,15 @@ class HTMLFormatter(BaseFormatter):
 
             # Apply final Unicode normalization to the entire output
             html_content = '\n'.join(html_parts)
-            return self._normalize_text(html_content)
+            html_content = self._normalize_text(html_content)
+            if reference_groups:
+                html_content = re.sub(
+                    r'<strong>Sources:</strong>.*?(?=<div class="block system-block">)',
+                    rendered_sources,
+                    html_content,
+                    flags=re.S,
+                )
+            return html_content
 
         except Exception as e:
             raise FormattingError(f"Failed to format conversation: {str(e)}", self)
@@ -215,6 +239,8 @@ class HTMLFormatter(BaseFormatter):
         converted_content = self._convert_markdown_to_html(content)
         # Clean up extra whitespace and newlines
         converted_content = self._clean_html_content(converted_content)
+        if '<strong>Sources:</strong>' in converted_content:
+            converted_content = converted_content.split('<strong>Sources:</strong>', 1)[0].rstrip()
         html_parts.append(f'<div class="content">{converted_content}</div>')
         
         # Add citations if present
@@ -226,12 +252,15 @@ class HTMLFormatter(BaseFormatter):
         
         return '\n'.join(html_parts)
 
-    def _generate_global_references_section_html(self, content_blocks: List[Dict[str, Any]]) -> str:
+    def _generate_global_references_section_html(
+        self,
+        content_blocks: List[Dict[str, Any]],
+    ) -> tuple[str, List[Dict[str, Any]]]:
         """Aggregate references across assistant blocks and render as an HTML section."""
         try:
             groups = extract_reference_groups(content_blocks)
             if not groups:
-                return ""
+                return "", []
 
             parts: List[str] = [
                 '<div class="block system-block">',
@@ -283,9 +312,45 @@ class HTMLFormatter(BaseFormatter):
             parts.append('</ol>')
             parts.append('</div>')
             parts.append('</div>')
-            return '\n'.join(parts)
+            return '\n'.join(parts), groups
         except Exception:
-            return ""
+            return "", []
+
+    def _render_sources_list_html(self, reference_groups: List[Dict[str, Any]]) -> str:
+        items: List[str] = []
+        seen: set[int] = set()
+        for group in reference_groups:
+            meta = group.get('meta') or {}
+            seq = meta.get('seq')
+            if not isinstance(seq, int) or seq in seen:
+                continue
+            seen.add(seq)
+            title = (meta.get('title') or '').strip()
+            label = (meta.get('source_label') or '').strip()
+            url = (meta.get('url') or '').strip()
+            display = self._compose_source_display(title, label)
+            if url:
+                items.append(f'<li>{seq}. <a href="{url}">{escape(display)}</a></li>')
+            else:
+                items.append(f'<li>{seq}. {escape(display)}</li>')
+        return '\n'.join(items)
+
+    @staticmethod
+    def _compose_source_display(title: str, label: str) -> str:
+        if label and not title:
+            return label
+        if not label and title:
+            return title
+        if not label and not title:
+            return "Reference"
+
+        norm_title = _normalize_reference_text(title)
+        norm_label = _normalize_reference_text(label)
+        if norm_title and norm_label and (norm_title in norm_label or norm_label in norm_title):
+            return label
+        if norm_title:
+            return title
+        return label
 
     def _format_code_block_dict(self, block: Dict[str, Any]) -> str:
         """Format a code block dictionary to HTML."""
