@@ -32,6 +32,26 @@ class JekyllTurnExporter:
         self.base_slug = _slugify(base_slug)
         self.layout = layout
 
+    def _clean_text_for_jekyll(self, text: str) -> str:
+        """
+        Clean text specifically for Jekyll output using UnicodeFix.
+        
+        This is more aggressive than the base text normalization
+        because Jekyll is sensitive to certain Unicode characters.
+        """
+        if not text:
+            return ""
+        
+        # Use UnicodeFix for aggressive Unicode cleanup
+        try:
+            from unicodefix.transforms import clean_text
+            text = clean_text(text, preserve_invisible=False, preserve_quotes=True, preserve_dashes=True)
+        except ImportError:
+            # Fallback if unicodefix is not available
+            pass
+        
+        return text
+
     def export_turn(
         self,
         *,
@@ -158,6 +178,8 @@ class JekyllTurnExporter:
             if not meta.get("is_fallback"):
                 text = (meta.get("text") or "").strip().replace("\n", " ")
                 if text:
+                    # Clean text for Jekyll using UnicodeFix
+                    text = self._clean_text_for_jekyll(text)
                     snippet = f'"{text}"'
 
             backlink_labels = generate_backlink_labels(len(occurrences))

@@ -44,11 +44,14 @@ def summarize(groups: Iterable[Dict]) -> Dict[int, Dict[str, str]]:
         seq = meta.get("seq")
         if not isinstance(seq, int) or seq in summary:
             continue
+        # Use reference_title if available, otherwise fall back to title
+        reference_title = (meta.get("reference_title") or "").strip()
         title = (meta.get("title") or "").strip()
+        display_title = reference_title if reference_title else title
         label = (meta.get("source_label") or "").strip()
         url = (meta.get("url") or "").strip()
         host = urlparse(url).netloc if url else ""
-        summary[seq] = {"title": title, "label": label, "url": url, "host": host}
+        summary[seq] = {"title": display_title, "label": label, "url": url, "host": host}
     return summary
 
 

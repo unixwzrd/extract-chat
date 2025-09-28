@@ -1,5 +1,49 @@
 # Changelog
 
+## 2025-09-28
+
+### Major Improvements
+
+- **Enhanced Reference Grouping Algorithm**: Implemented sophisticated two-step grouping logic that properly handles complex reference scenarios:
+  - Groups references by `reference_title` (prioritizing `source_label` over `title`) with text preview to distinguish different articles
+  - Merges groups with same `base_url` and short text snippets (≤200 characters) to handle cases like LinkedIn references
+  - Prevents incorrect grouping of distinct articles from same domain (e.g., different ProPublica articles)
+  - Optimized performance using string length instead of word count for short snippet detection
+
+- **Unicode Handling Integration**: Added comprehensive Unicode cleanup for Jekyll export:
+  - Integrated `unicodefix` package for aggressive Unicode normalization and cleanup
+  - Added Jekyll-specific text cleaning method to handle zero-width spaces and problematic characters
+  - Preserved Unicode characters in other contexts while ensuring clean Jekyll output
+  - Updated dependencies to include `unicodefix @ git+https://github.com/unixwzrd/UnicodeFix.git`
+
+- **Reference Display Improvements**: 
+  - Implemented `reference_title` field that prioritizes `source_label` when available, falling back to `title`
+  - Updated all formatters and processors to use `reference_title` for consistent display
+  - Added pipe character escaping (`|` → `\|`) specifically for reference titles to prevent Jekyll table interpretation
+  - Enhanced reference metadata propagation throughout the processing pipeline
+
+- **Jekyll Export Enhancements**:
+  - Improved cross-page citation linking and reference organization
+  - Better handling of reference grouping and deduplication
+  - Cleaner Unicode output suitable for Jekyll processing
+
+### Technical Changes
+
+- Modified `CitationProcessor` to properly populate and use `reference_title` field
+- Updated `reference_utils.py` with new two-step grouping algorithm and pipe escaping
+- Enhanced `JekyllTurnExporter` with UnicodeFix integration for text cleaning
+- Updated test scripts to use `reference_title` for accurate validation
+- Optimized grouping performance by replacing word count with string length checks
+
+## 2025-09-27
+
+- Unified all command-line functionality behind the `extract-chat` console script
+  registered in `pyproject.toml`; removed the legacy `bin/` wrappers.
+- Added first-class Jekyll export support to the CLI with `--format jekyll` and
+  associated options for turn selection, slugs, and page layout.
+- Updated documentation (README, docs/) to reflect the new CLI usage and
+  simplified architecture.
+
 ## 2025-09-25
 
 - Skip citation entries that lack real metadata so the generated Markdown and HTML outputs no longer emit placeholder references such as `Metadata missing for ref_id …`.

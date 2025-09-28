@@ -39,6 +39,26 @@ class MarkdownFormatter(BaseFormatter):
         """Get the MIME type for this format."""
         return "text/markdown"
 
+    def _clean_text_for_jekyll(self, text: str) -> str:
+        """
+        Clean text specifically for Jekyll output using UnicodeFix.
+        
+        This is more aggressive than the base text normalization
+        because Jekyll is sensitive to certain Unicode characters.
+        """
+        if not text:
+            return ""
+        
+        # Use UnicodeFix for aggressive Unicode cleanup
+        try:
+            from unicodefix.transforms import clean_text
+            text = clean_text(text, preserve_invisible=False, preserve_quotes=True, preserve_dashes=True)
+        except ImportError:
+            # Fallback if unicodefix is not available
+            pass
+        
+        return text
+
     def _format_timestamp(self, timestamp):
         """Format timestamp for display."""
         if timestamp is None:

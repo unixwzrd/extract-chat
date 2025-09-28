@@ -45,6 +45,181 @@ def _html_reference_numbers(html_output: str) -> list[int]:
     return [int(match) for match in re.findall(r"<strong>Ref (\d+)\.</strong>", html_output)]
 
 
+def test_extract_reference_groups_deduplicates_source_label_variants() -> None:
+    references_table = {
+        "references": [
+            {
+                "unique_id": "turn1_seq1_0_1_10_20",
+                "turn_id": 1,
+                "ref_id": 14,
+                "seq": 1,
+                "title": "Example Article",
+                "url": "https://example.com/resource",
+                "text": "A repeated snippet about policy",
+                "attribution": "Example News",
+                "start_line": 10,
+                "end_line": 20,
+            },
+            {
+                "unique_id": "turn1_seq2_0_2_30_40",
+                "turn_id": 1,
+                "ref_id": 16,
+                "seq": 2,
+                "title": "Example Article",
+                "url": "https://example.com/resource",
+                "text": "A repeated snippet about policy",
+                "attribution": "Example News",
+                "start_line": 10,
+                "end_line": 20,
+                "source_label": "Example News",
+            },
+        ]
+    }
+
+    groups = extract_reference_groups(
+        [
+            {
+                "type": "assistant",
+                "references_table": references_table,
+                "metadata": {"reference_turn_number": 1},
+            }
+        ]
+    )
+
+    assert len(groups) == 1
+    group = groups[0]
+    assert len(group["occurrences"]) == 2
+    occurrence_ref_ids = {entry.get("ref_id") for entry in group["occurrences"]}
+    assert occurrence_ref_ids == {14, 16}
+    # ensure canonical URL without fragment used
+    meta_url = group["meta"].get("url")
+    assert isinstance(meta_url, str) and meta_url.startswith("https://example.com/resource")
+
+
+def test_reference_groups_keep_distinct_line_ranges() -> None:
+    references_table = {
+        "references": [
+            {
+                "unique_id": "turn1_seq1_0_1_10_20",
+                "turn_id": 1,
+                "ref_id": 21,
+                "seq": 1,
+                "title": "Case Study",
+                "url": "https://example.com/article",
+                "text": "First quote",
+                "start_line": 10,
+                "end_line": 20,
+            },
+            {
+                "unique_id": "turn1_seq2_0_2_30_40",
+                "turn_id": 1,
+                "ref_id": 21,
+                "seq": 2,
+                "title": "Case Study",
+                "url": "https://example.com/article",
+                "text": "First quote",
+                "start_line": 30,
+                "end_line": 40,
+            },
+        ]
+    }
+
+    groups = extract_reference_groups(
+        [
+            {
+                "type": "assistant",
+                "references_table": references_table,
+                "metadata": {"reference_turn_number": 1},
+            }
+        ]
+    )
+
+    assert len(groups) == 1
+    assert {occ["start_line"] for occ in groups[0]["occurrences"]} == {10, 30}
+
+
+def test_reference_groups_consider_url_fragments() -> None:
+    references_table = {
+        "references": [
+            {
+                "unique_id": "turn1_seq1_0_1_10_20",
+                "turn_id": 1,
+                "ref_id": 42,
+                "seq": 1,
+                "title": "Article",
+                "url": "https://example.com/resource#:~:text=first",
+                "text": "Summary of the first section",
+                "start_line": 10,
+                "end_line": 20,
+            },
+            {
+                "unique_id": "turn1_seq2_0_1_10_20",
+                "turn_id": 1,
+                "ref_id": 42,
+                "seq": 2,
+                "title": "Article",
+                "url": "https://example.com/resource#:~:text=second",
+                "text": "Detailed findings from the second section",
+                "start_line": 10,
+                "end_line": 20,
+            },
+        ]
+    }
+
+    groups = extract_reference_groups(
+        [
+            {
+                "type": "assistant",
+                "references_table": references_table,
+                "metadata": {"reference_turn_number": 1},
+            }
+        ]
+    )
+
+    assert len(groups) == 2
+
+
+def test_short_snippets_are_collapsed() -> None:
+    references_table = {
+        "references": [
+            {
+                "unique_id": "turn1_seq1_0_1_10_20",
+                "turn_id": 1,
+                "ref_id": 55,
+                "seq": 1,
+                "title": "Article",
+                "url": "https://example.com/resource#:~:text=one",
+                "text": "Word",
+                "start_line": 10,
+                "end_line": 20,
+            },
+            {
+                "unique_id": "turn1_seq2_0_1_10_20",
+                "turn_id": 1,
+                "ref_id": 55,
+                "seq": 2,
+                "title": "Article",
+                "url": "https://example.com/resource#:~:text=two",
+                "text": "Word",
+                "start_line": 10,
+                "end_line": 20,
+            },
+        ]
+    }
+
+    groups = extract_reference_groups(
+        [
+            {
+                "type": "assistant",
+                "references_table": references_table,
+                "metadata": {"reference_turn_number": 1},
+            }
+        ]
+    )
+
+    assert len(groups) == 1
+
+
 def test_markdown_and_html_references_are_consistent() -> None:
     conversation = _load_conversation()
     DocumentContext.initialize(conversation=conversation)

@@ -5,6 +5,8 @@ from collections import deque
 from collections.abc import Mapping, Sequence
 from typing import Any, Deque, Dict, List
 
+SHORT_SNIPPET_WORD_LIMIT = 2
+
 __all__ = [
     "extract_reference_groups",
     "generate_backlink_labels",
@@ -78,7 +80,9 @@ def extract_reference_groups(conversation_blocks: Sequence[Mapping[str, Any]]) -
             }
         )
 
+    grouped_list = _merge_groups_by_base_url(grouped_list)
     grouped_list.sort(key=_reference_sort_key)
+    _renumber_group_sequences(grouped_list, refs_list)
     return grouped_list
 
 
@@ -191,7 +195,7 @@ def replace_inline_citation_markers(
 def format_apa_reference_entry(info: Mapping[str, Any], html: bool) -> str:
     """Generate a lightweight APA-style reference string."""
     if info.get("is_fallback"):
-        fallback_text = (info.get("title") or info.get("text") or '').strip()
+        fallback_text = (info.get("reference_title") or info.get("title") or info.get("text") or '').strip()
         url = (info.get("url") or '').strip()
         if html and url:
             return f"<a href=\"{url}\">{fallback_text}</a>"
@@ -199,7 +203,8 @@ def format_apa_reference_entry(info: Mapping[str, Any], html: bool) -> str:
             return f"[{fallback_text}]({url})"
         return fallback_text
 
-    raw_title = (info.get("title") or "").strip()
+    # Use reference_title if available, otherwise fall back to title
+    raw_title = (info.get("reference_title") or info.get("title") or "").strip()
     if not raw_title:
         raw_title = (info.get("text") or "").strip()
     if not raw_title:
@@ -218,6 +223,9 @@ def format_apa_reference_entry(info: Mapping[str, Any], html: bool) -> str:
     pub_date = info.get("pub_date")
     year = _extract_year(pub_date)
     year_fragment = f"({year})." if year else "(n.d.)."
+
+    # Escape pipe characters in reference titles to prevent Jekyll table interpretation
+    title = title.replace('|', '\\|')
 
     placeholder = title.startswith("Metadata missing for ref_id")
     if html:
@@ -244,23 +252,28 @@ def _reference_identity_from_dict(info: Mapping[str, Any]) -> tuple:
     seq = int(info.get("seq", 0))
     return _reference_identity_key(
         info.get("url"),
-        info.get("title"),
+        info.get("reference_title") or info.get("title"),
         info.get("text"),
         ref_id,
         seq,
         bool(info.get("is_fallback")),
         info.get("source_label"),
+        info.get("attribution"),
+        (info.get("start_line"), info.get("end_line")),
     )
 
 
 def _score_reference_entry(entry: Mapping[str, Any]) -> int:
     score = 0
-    if (entry.get("title") or "").strip():
+    title = (entry.get("title") or "").strip()
+    url = (entry.get("url") or "").strip()
+    text = (entry.get("text") or "").strip()
+    if title:
         score += 4
-    if (entry.get("url") or "").strip():
+    if url:
         score += 3
-    if (entry.get("text") or "").strip():
-        score += 2
+    if text:
+        score += 2 + min(5, len(re.findall(r"\b\w+\b", text)))
     if entry.get("attribution"):
         score += 1
     return score
@@ -304,6 +317,203 @@ def _normalize_text(text: Any) -> str:
     return _clean_str(text).lower()
 
 
+def _merge_groups_by_base_url(groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Merge groups using two-step logic:
+    1. First group by reference_title (handles different articles from same domain)
+    2. Then merge groups with same base URL and short text snippets (handles LinkedIn-type cases)
+    """
+    if not groups:
+        return groups
+
+    # Step 1: Group by reference_title first, but also consider text content
+    initial_groups = {}
+    for group in groups:
+        meta = group.get("meta") or {}
+        ref_title = meta.get("reference_title", "") or meta.get("title", "")
+        if ref_title:
+            # Include first few words of text to distinguish different parts of same article
+            text = meta.get("text", "")
+            text_preview = ' '.join(text.split()[:5]) if text else ''
+            group_key = f"title:{ref_title}|text:{text_preview}"
+        else:
+            # Fallback to URL if no title
+            url = meta.get("url", "")
+            base_url = _get_base_url(url)
+            group_key = f"url:{base_url}" if base_url else f"fallback:{id(group)}"
+        
+        if group_key not in initial_groups:
+            initial_groups[group_key] = []
+        initial_groups[group_key].append(group)
+    
+    # Step 2: Merge groups with same base URL and short text snippets
+    merged_groups = {}
+    base_url_to_groups = {}
+    
+    for group_key, group_list in initial_groups.items():
+        if not group_list:
+            continue
+            
+        # Get base URL and text snippet info from first group
+        first_group = group_list[0]
+        meta = first_group.get("meta") or {}
+        url = meta.get("url", "")
+        base_url = _get_base_url(url)
+        text = meta.get("text", "")
+        
+        # If base_url exists and text is short (like LinkedIn), group by base_url
+        # Use string length instead of word count for better performance
+        if base_url and len(text) <= 200:  # Short snippet threshold (200 chars)
+            if base_url not in base_url_to_groups:
+                base_url_to_groups[base_url] = []
+            base_url_to_groups[base_url].extend(group_list)
+        else:
+            # Keep original grouping
+            merged_groups[group_key] = group_list
+    
+    # Add merged base URL groups
+    for base_url, all_groups in base_url_to_groups.items():
+        merged_groups[f"merged_url:{base_url}"] = all_groups
+    
+    # Convert back to list format
+    final_groups = []
+    for group_list in merged_groups.values():
+        if len(group_list) == 1:
+            final_groups.append(group_list[0])
+        else:
+            # Merge multiple groups into one
+            final_groups.append(_combine_reference_group_cluster(group_list))
+    
+    return final_groups
+
+
+def _combine_reference_group_cluster(groups: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not groups:
+        raise ValueError("Expected at least one group to combine")
+
+    best = max(
+        groups,
+        key=lambda g: (
+            _snippet_word_count((g.get("meta") or {}).get("text")),
+            _score_reference_entry(g.get("meta") or {}),
+            -g.get("min_seq", 10**9),
+        ),
+    )
+
+    combined_occurrences: List[Dict[str, Any]] = []
+    min_seq = 10**9
+    for group in groups:
+        combined_occurrences.extend(group.get("occurrences", []))
+        min_seq = min(min_seq, group.get("min_seq", 10**9))
+
+    best_meta = dict(best.get("meta") or {})
+    occ_min_seq = min(
+        (int(occ.get("seq", 10**9)) for occ in combined_occurrences),
+        default=min_seq,
+    )
+    if occ_min_seq != 10**9:
+        best_meta["seq"] = occ_min_seq
+
+    return {
+        "ref_id": best.get("ref_id"),
+        "meta": best_meta,
+        "occurrences": combined_occurrences,
+        "min_seq": min_seq,
+    }
+
+
+def _merge_two_groups(primary: Dict[str, Any], secondary: Dict[str, Any]) -> Dict[str, Any]:
+    combined_occurrences = primary.get("occurrences", []) + secondary.get("occurrences", [])
+    min_seq = min(primary.get("min_seq", 10**9), secondary.get("min_seq", 10**9))
+    best = primary
+    other_text_len = _snippet_word_count((secondary.get("meta") or {}).get("text"))
+    best_text_len = _snippet_word_count((best.get("meta") or {}).get("text"))
+    if other_text_len > best_text_len:
+        best = secondary
+    best_meta = dict(best.get("meta") or {})
+    occ_min_seq = min(
+        (int(occ.get("seq", 10**9)) for occ in combined_occurrences),
+        default=min_seq,
+    )
+    if occ_min_seq != 10**9:
+        best_meta["seq"] = occ_min_seq
+    return {
+        "ref_id": best.get("ref_id"),
+        "meta": best_meta,
+        "occurrences": combined_occurrences,
+        "min_seq": min_seq,
+    }
+
+
+def _snippet_word_count(text: Any) -> int:
+    if not text:
+        return 0
+    return len(re.findall(r"\b\w+\b", str(text)))
+
+
+def _normalize_snippet(text: Any) -> str:
+    if not text:
+        return ""
+    normalized = re.sub(r"\s+", " ", str(text).strip().lower())
+    return normalized
+
+
+def _get_base_url(url: str) -> str:
+    """Extract base URL without fragments or query parameters."""
+    if not url:
+        return ""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    except Exception:
+        return ""
+
+
+def _snippets_should_merge(group_a: Dict[str, Any], group_b: Dict[str, Any]) -> bool:
+    meta_a = group_a.get("meta") or {}
+    meta_b = group_b.get("meta") or {}
+    text_a = meta_a.get("text") or ""
+    text_b = meta_b.get("text") or ""
+    count_a = _snippet_word_count(text_a)
+    count_b = _snippet_word_count(text_b)
+
+    if not text_a or not text_b:
+        return True
+    if count_a <= SHORT_SNIPPET_WORD_LIMIT or count_b <= SHORT_SNIPPET_WORD_LIMIT:
+        return True
+
+    norm_a = _normalize_snippet(text_a)
+    norm_b = _normalize_snippet(text_b)
+    if not norm_a or not norm_b:
+        return True
+    if norm_a == norm_b:
+        return True
+    if norm_a in norm_b or norm_b in norm_a:
+        return True
+
+    return False
+
+
+def _renumber_group_sequences(
+    groups: List[Dict[str, Any]],
+    original_refs: Sequence[Mapping[str, Any]],
+) -> None:
+    uid_to_original: Dict[str, Mapping[str, Any]] = {}
+    for ref in original_refs:
+        uid = ref.get("unique_id")
+        if isinstance(uid, str):
+            uid_to_original[uid] = ref
+
+    for idx, group in enumerate(groups, start=1):
+        meta = group.get("meta") or {}
+        meta["seq"] = idx
+        for occ in group.get("occurrences", []):
+            occ["seq"] = idx
+            uid = occ.get("unique_id")
+            if isinstance(uid, str) and uid in uid_to_original:
+                uid_to_original[uid]["seq"] = idx
+
+
 def _reference_identity_key(
     url: Any,
     title: Any,
@@ -312,17 +522,51 @@ def _reference_identity_key(
     seq: int,
     is_fallback: bool = False,
     source_label: Any = "",
+    attribution: Any = "",
+    line_range: tuple[Any, Any] | None = None,
 ) -> tuple:
     url_norm = _normalize_url(url)
-    base_url = url_norm.split('#', 1)[0] if url_norm else ''
+    fragment = ""
+    base_url = url_norm
+    if url_norm and "#" in url_norm:
+        base_url, fragment = url_norm.split('#', 1)
     title_norm = _normalize_text(title)
     text_norm = _normalize_text(text)
     if is_fallback and not title_norm:
         title_norm = text_norm
     label_norm = _normalize_text(source_label)
+    attr_norm = _normalize_text(attribution)
+    raw_text = text or ""
+    text_word_count = len(re.findall(r"\b\w+\b", raw_text))
+
     identity_text = title_norm or text_norm or ''
-    if label_norm and label_norm != identity_text:
-        identity_text = f"{identity_text}::{label_norm}" if identity_text else label_norm
+    if title_norm and text_norm and text_word_count > SHORT_SNIPPET_WORD_LIMIT:
+        identity_text = f"{title_norm}@@snippet::{text_norm}"
+    if label_norm:
+        if not identity_text:
+            identity_text = label_norm
+        elif not base_url:
+            label_redundant = label_norm == identity_text or (
+                attr_norm and label_norm == attr_norm
+            )
+            if not label_redundant:
+                identity_text = f"{identity_text}::{label_norm}" if identity_text else label_norm
+    elif attr_norm and not identity_text:
+        identity_text = attr_norm
+    extras: list[str] = []
+    if not identity_text and fragment:
+        extras.append(fragment)
+    if (
+        base_url
+        and not identity_text
+        and line_range
+        and all(x is not None for x in line_range)
+    ):
+        start_line, end_line = line_range
+        extras.append(f"{start_line}-{end_line}")
+    if extras:
+        extra_tag = "::".join(extras)
+        identity_text = f"{identity_text}@@{extra_tag}" if identity_text else extra_tag
     if base_url or identity_text:
         return (base_url, identity_text)
     return (ref_id, seq)

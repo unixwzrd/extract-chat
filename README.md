@@ -1,6 +1,6 @@
 # extract-chat
 
-Extract ChatGPT conversations from exported JSON files and render them as Markdown or HTML with proper citation handling.
+Extract ChatGPT conversations from exported JSON files and render them as Markdown, HTML, or Jekyll-ready sections with proper citation handling.
 
 - Parses parent/child conversation structure to preserve flow
 - Detects inline citation markers like `【refId†Lstart-Lend】`
@@ -18,19 +18,35 @@ pip install -e .
 
 This uses the `src` layout. The package name is `extract-chat` and the import is `extract_chat`.
 
+The command line entry point exposed by the package is `extract-chat`.
+
 ## CLI Usage
 
 ```
-extract-chat path/to/conversation.json -f markdown -o out.md
-# or
-extract-chat path/to/conversation.json -f html -o out.html
+# Markdown (default)
+extract-chat path/to/conversation.json -o out.md
+
+# HTML with optional CSS
+extract-chat path/to/conversation.json --format html --css-file styles/site.css --output out.html
+
+# Jekyll section export (writes multiple files into a directory)
+extract-chat path/to/conversation.json \
+  --format jekyll \
+  --jekyll-turn-id c3df4f37-ab12-4ab6-a810-6b687a759b83 \
+  --jekyll-base-slug 2025-09-25-pa-paper \
+  --output tmp/jekyll-pages
 ```
 
-Options:
-- `-f, --format`: `markdown` (default) or `html`
-- `-o, --output`: Output file path
-- `-c, --css-file`: Custom CSS path for HTML output
-- `--force`: Overwrite existing output file
+Common options:
+
+- `-f, --format`: `markdown` (default), `html`, or `jekyll`.
+- `-o, --output`: Output file for Markdown/HTML. For Jekyll, this should be a directory where the section pages will be written.
+- `-c, --css-file`: Custom CSS path for HTML output (optional).
+- `--force`: Overwrite the destination if it already exists.
+- `--jekyll-turn-id`: (Required when `--format jekyll`) Assistant turn identifier to export.
+- `--jekyll-base-slug`: Base slug used for generated filenames/permalinks. When omitted we attempt to derive one from the conversation title.
+- `--jekyll-layout`: Front-matter `layout` value for Jekyll pages (defaults to `page`).
+- `--jekyll-reference-title`: Title used for the generated references page (defaults to `References`).
 
 ## Markdown Citations
 
@@ -39,7 +55,7 @@ Options:
 
 ## HTML Citations
 
-- The HTML formatter is currently being wired to match the Markdown citation behavior. Markdown is the primary, validated output.
+- HTML output mirrors the Markdown citation structure: superscript anchors link forward to the references section, and each reference includes a backlink to the originating citation.
 
 ## Development
 
@@ -58,4 +74,3 @@ python tests/refs_report.py path/to/conversation.json
 ## License
 
 Proprietary. All rights reserved.
-

@@ -160,6 +160,7 @@ class BaseFormatter(ABC):
             # Fallback if ftfy is not available
             pass
         
+        
         # Additional Unicode cleanup for problematic characters
 
         # Remove or replace problematic Unicode characters

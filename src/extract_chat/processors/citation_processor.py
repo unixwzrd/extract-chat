@@ -9,6 +9,7 @@ from ..context.document_context import DocumentContext
 
 MarkerKey = Tuple[int, int, int]
 MARKER_PATTERN = re.compile(r"【(\d+)†L(\d+)-L(\d+)】")
+SHORT_SNIPPET_WORD_LIMIT = 2
 
 
 @dataclass
@@ -25,6 +26,7 @@ class ReferenceEntry:
     is_fallback: bool = False
     source_label: str = ""
     skip_citation: bool = False
+    reference_title: str = ""
 
     def merge(self, data: Dict[str, Any]) -> None:
         """Fill empty fields without overwriting existing values."""
@@ -57,6 +59,18 @@ class ReferenceEntry:
             if attribution:
                 self.attribution = attribution
 
+        # Set reference_title: use source_label if available, otherwise use title
+        if not self.reference_title:
+            source_label = _clean_str(data.get("source_label"))
+            if source_label:
+                self.reference_title = source_label
+            elif self.title:
+                self.reference_title = self.title
+        
+        # Also update reference_title if source_label is provided and we don't have one yet
+        if data.get("source_label") and not self.reference_title:
+            self.reference_title = _clean_str(data.get("source_label"))
+
     def to_payload(self, *, turn_prefix: int, occurrence_index: int = 0) -> Dict[str, Any]:
         ref_id, start_line, end_line = self.key
         unique_suffix = f"_{occurrence_index}" if occurrence_index else "_0"
@@ -75,6 +89,7 @@ class ReferenceEntry:
             "is_fallback": self.is_fallback,
             "source_label": self.source_label,
             "skip_citation": self.skip_citation,
+            "reference_title": self.reference_title,
             "occurrence_index": occurrence_index,
         }
 
@@ -113,6 +128,14 @@ class CitationProcessor:
                     entry.is_fallback = True
                 if entry.title and not entry.title.startswith("Metadata missing"):
                     entry.skip_citation = False
+        
+        # Set reference_title after source_label is populated
+        for entry in refs_by_key.values():
+            # Always set reference_title: use source_label if available, otherwise use title
+            if entry.source_label:
+                entry.reference_title = entry.source_label
+            elif entry.title:
+                entry.reference_title = entry.title
 
         next_global_seq = self._assign_sequences(
             refs_by_key,
@@ -178,6 +201,8 @@ class CitationProcessor:
                 ref.get("seq", 0),
                 bool(ref.get("is_fallback")),
                 ref.get("source_label"),
+                ref.get("attribution"),
+                (ref.get("start_line"), ref.get("end_line")),
             )
             if identity in identity_seq_map:
                 ref["seq"] = identity_seq_map[identity]
@@ -279,9 +304,39 @@ class CitationProcessor:
             target_key = self._resolve_key(direct_key, refs_by_key)
             if target_key is None:
                 target_key = self._find_key_by_title_url(entry, refs_by_key)
-            ref_entry, next_seq = self._ensure_entry(refs_by_key, target_key or direct_key, next_seq)
+
+            data = self._data_from_content_reference(entry)
+
+            chosen_key = target_key or direct_key
+            existing_entry = refs_by_key.get(chosen_key) if chosen_key else None
+
+            if (
+                existing_entry
+                and direct_key
+                and direct_key != chosen_key
+            ):
+                existing_identity = self._reference_identity(existing_entry)
+                prospective_identity = _reference_identity_from_fields(
+                    data.get("url"),
+                    data.get("title"),
+                    data.get("text"),
+                    existing_entry.key[0],
+                    existing_entry.seq,
+                    existing_entry.is_fallback,
+                    data.get("source_label"),
+                    data.get("attribution"),
+                    direct_key[1:],
+                )
+                if prospective_identity != existing_identity:
+                    chosen_key = direct_key
+                    existing_entry = None
+
+            if chosen_key is None:
+                chosen_key = self._allocate_virtual_key(refs_by_key)
+
+            ref_entry, next_seq = self._ensure_entry(refs_by_key, chosen_key, next_seq)
             if ref_entry:
-                ref_entry.merge(self._data_from_content_reference(entry))
+                ref_entry.merge(data)
 
     # ------------------------------------------------------------------
     # Citation helpers
@@ -323,6 +378,7 @@ class CitationProcessor:
             "text": metadata.get("text") or extra.get("evidence_text"),
             "pub_date": metadata.get("pub_date"),
             "attribution": metadata.get("source") or extra.get("connector_source"),
+            "source_label": metadata.get("source_label", ""),
         }
 
     # ------------------------------------------------------------------
@@ -363,6 +419,7 @@ class CitationProcessor:
                         or item_dict.get("content"),
                         "pub_date": item_dict.get("pub_date"),
                         "attribution": item_dict.get("attribution", ""),
+                        "source_label": item_dict.get("source_label", ""),
                     }
         return {
             "title": entry.get("title", ""),
@@ -370,6 +427,7 @@ class CitationProcessor:
             "text": entry.get("snippet"),
             "pub_date": entry.get("pub_date"),
             "attribution": entry.get("attribution", ""),
+            "source_label": entry.get("source_label", ""),
         }
 
     # ------------------------------------------------------------------
@@ -481,7 +539,7 @@ class CitationProcessor:
 
     def _propagate_ref_metadata(self, refs_by_key: Dict[MarkerKey, ReferenceEntry]) -> None:
         """Ensure every reference entry has baseline bibliographic data across identical ref_ids."""
-        fields = ["title", "url", "text", "attribution", "pub_date"]
+        fields = ["title", "url", "text", "attribution", "pub_date", "source_label"]
         best_by_ref: Dict[int, Dict[str, Any]] = {}
 
         for entry in refs_by_key.values():
@@ -624,7 +682,23 @@ class CitationProcessor:
             entry.seq,
             entry.is_fallback,
             entry.source_label,
+            entry.attribution,
+            entry.key[1:],
         )
+
+    def _allocate_virtual_key(self, refs_by_key: Dict[MarkerKey, ReferenceEntry]) -> MarkerKey:
+        """Generate a synthetic marker key when no direct one is available."""
+
+        ref_id = 0
+        if refs_by_key:
+            ref_id = max(key[0] for key in refs_by_key.keys())
+        base = 1_000_000
+        offset = 0
+        while True:
+            candidate = (ref_id, base + offset, base + offset + 1)
+            if candidate not in refs_by_key:
+                return candidate
+            offset += 2
 
 
 def _reference_identity_from_fields(
@@ -635,17 +709,52 @@ def _reference_identity_from_fields(
     seq: int,
     is_fallback: bool = False,
     source_label: Any = "",
+    attribution: Any = "",
+    line_range: tuple[Any, Any] | None = None,
 ) -> tuple:
     url_norm = _normalize_url(url)
-    base_url = url_norm.split('#', 1)[0] if url_norm else ''
-    title_norm = _normalize_text(title)
+    fragment = ""
+    base_url = url_norm
+    if url_norm and "#" in url_norm:
+        base_url, fragment = url_norm.split('#', 1)
+    canonical_title = source_label if source_label else title
+    title_norm = _normalize_text(canonical_title)
     text_norm = _normalize_text(text)
     if not title_norm and not text_norm and is_fallback:
         title_norm = text_norm
     label_norm = _normalize_text(source_label)
+    attr_norm = _normalize_text(attribution)
+    raw_text = text or ""
+    text_word_count = len(re.findall(r"\b\w+\b", raw_text))
+
     identity_text = title_norm or text_norm or ''
-    if label_norm and label_norm != identity_text:
-        identity_text = f"{identity_text}::{label_norm}" if identity_text else label_norm
+    if title_norm and text_norm and text_word_count > SHORT_SNIPPET_WORD_LIMIT:
+        identity_text = f"{title_norm}@@snippet::{text_norm}"
+    if label_norm:
+        if not identity_text:
+            identity_text = label_norm
+        elif not base_url:
+            label_redundant = label_norm == identity_text or (
+                attr_norm and label_norm == attr_norm
+            )
+            if not label_redundant:
+                identity_text = f"{identity_text}::{label_norm}" if identity_text else label_norm
+    elif attr_norm and not identity_text:
+        identity_text = attr_norm
+    extras: list[str] = []
+    if not identity_text and fragment:
+        extras.append(fragment)
+    if (
+        base_url
+        and not identity_text
+        and line_range
+        and all(x is not None for x in line_range)
+    ):
+        start_line, end_line = line_range
+        extras.append(f"{start_line}-{end_line}")
+    if extras:
+        extra_tag = "::".join(extras)
+        identity_text = f"{identity_text}@@{extra_tag}" if identity_text else extra_tag
     if base_url or identity_text:
         return (base_url, identity_text)
     return (ref_id, seq)

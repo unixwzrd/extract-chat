@@ -31,6 +31,9 @@ def _identity_from_reference(ref: dict) -> tuple:
         ref.get("seq", 0),
         bool(ref.get("is_fallback")),
         ref.get("source_label"),
+        ref.get("attribution"),
+        (ref.get("start_line"), ref.get("end_line")),
+        ref.get("reference_title"),
     )
 
 

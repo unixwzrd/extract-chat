@@ -12,7 +12,8 @@ license = {text = "Proprietary"}
 authors = [{ name = "extract-chat maintainers" }]
 dependencies = [
   "pydantic>=2",
-  "ftfy>=6",
+  "ftfy>=6.2",
+  "unicodefix @ git+https://github.com/unixwzrd/UnicodeFix.git",
 ]
 
 [project.scripts]
