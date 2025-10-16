@@ -10,7 +10,7 @@ from pathlib import Path
 
 from extract_chat.context.document_context import DocumentContext
 from extract_chat.formatters import HTMLFormatter, MarkdownFormatter
-from extract_chat.formatters.jekyll_exporter import JekyllTurnExporter
+from extract_chat.formatters.jekyll_formatter import JekyllTurnExporter
 from extract_chat.processors.formatter_adapter import FormatterAdapter
 from extract_chat.processors.turn_processor import TurnProcessorV2
 from extract_chat.schemas.conversation import Conversation

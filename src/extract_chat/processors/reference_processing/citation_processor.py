@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from ..context.document_context import DocumentContext
+from extract_chat.context.document_context import DocumentContext
 
 MarkerKey = Tuple[int, int, int]
 MARKER_PATTERN = re.compile(r"【(\d+)†L(\d+)-L(\d+)】")
@@ -66,7 +66,6 @@ class ReferenceEntry:
                 self.reference_title = source_label
             elif self.title:
                 self.reference_title = self.title
-        
         # Also update reference_title if source_label is provided and we don't have one yet
         if data.get("source_label") and not self.reference_title:
             self.reference_title = _clean_str(data.get("source_label"))
@@ -128,7 +127,6 @@ class CitationProcessor:
                     entry.is_fallback = True
                 if entry.title and not entry.title.startswith("Metadata missing"):
                     entry.skip_citation = False
-        
         # Set reference_title after source_label is populated
         for entry in refs_by_key.values():
             # Always set reference_title: use source_label if available, otherwise use title

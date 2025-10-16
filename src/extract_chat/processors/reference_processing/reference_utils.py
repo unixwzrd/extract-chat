@@ -222,7 +222,7 @@ def format_apa_reference_entry(info: Mapping[str, Any], html: bool) -> str:
     url = (info.get("url") or "").strip()
     pub_date = info.get("pub_date")
     year = _extract_year(pub_date)
-    year_fragment = f"({year})." if year else "(n.d.)."
+    year_fragment = f"({year})." if year else ""
 
     # Escape pipe characters in reference titles to prevent Jekyll table interpretation
     title = title.replace('|', '\\|')

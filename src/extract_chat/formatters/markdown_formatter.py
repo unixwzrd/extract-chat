@@ -8,7 +8,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from extract_chat.formatters.base import BaseFormatter, FormattingError
-from extract_chat.formatters.reference_utils import (
+from extract_chat.processors.reference_processing.reference_utils import (
     extract_reference_groups,
     format_apa_reference_entry,
     generate_backlink_labels,

@@ -5,13 +5,15 @@ from dataclasses import dataclass
 from typing import Dict, List, Sequence
 
 from extract_chat.context.document_context import DocumentContext
-from extract_chat.formatters.reference_utils import (
+from extract_chat.processors.reference_processing.citation_processor import (
+    CitationProcessor,
+)
+from extract_chat.processors.reference_processing.reference_utils import (
     extract_reference_groups,
     format_apa_reference_entry,
     generate_backlink_labels,
     replace_inline_citation_markers,
 )
-from extract_chat.processors.citation_processor import CitationProcessor
 
 
 @dataclass

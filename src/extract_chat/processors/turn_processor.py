@@ -5,8 +5,10 @@ Turn Processor V2 - Uses parent-child traversal for correct conversation flow.
 import logging
 from typing import Any, Dict, List, Optional
 
-from ..context.document_context import DocumentContext
-from .citation_processor import CitationProcessor
+from extract_chat.context.document_context import DocumentContext
+from extract_chat.processors.reference_processing.citation_processor import (
+    CitationProcessor,
+)
 
 logger = logging.getLogger(__name__)
 

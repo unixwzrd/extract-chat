@@ -25,7 +25,7 @@ def _normalize_reference_text(value: str) -> str:
 # ftfy import moved to base class
 from extract_chat.css_manager import create_inline_css_style, get_css_content
 from extract_chat.formatters.base import BaseFormatter, FormattingError
-from extract_chat.formatters.reference_utils import (
+from extract_chat.processors.reference_processing.reference_utils import (
     extract_reference_groups,
     format_apa_reference_entry,
     generate_backlink_labels,
