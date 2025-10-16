@@ -195,7 +195,7 @@ class JekyllTurnExporter:
                     continue
                 label = (occ.get("occurrence_label") or "").strip() or backlink_labels[idx]
                 backlinks.append(
-                    f"[{label}^]({self.base_slug}-{slug}.html#ref-source-{uid})"
+                    f"[{label}^]({self.base_slug}-{slug}.md#ref-source-{uid})"
                 )
 
             entry_parts: List[str] = []
@@ -264,10 +264,10 @@ def _strip_sources_and_references(text: str) -> tuple[str, str]:
 
 
 def _rewrite_reference_links(text: str, *, base_slug: str) -> str:
-    refs_url = f"{base_slug}-references.html"
+    refs_url = f"{base_slug}-references"
     return re.sub(
         r'href="#(ref-target-[^"]+)"',
-        lambda m: f'href="{refs_url}#{m.group(1)}"',
+        lambda m: f'href="{refs_url}.md#{m.group(1)}"',
         text,
     )
 
