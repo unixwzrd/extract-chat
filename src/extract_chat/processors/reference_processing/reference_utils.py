@@ -158,8 +158,12 @@ def replace_inline_citation_markers(
 
     def _emit_sup(seq: int, unique_id: str | None) -> str:
         if not unique_id:
-            return f'<sup>{seq}</sup>'
-        return f'<sup id="ref-source-{unique_id}"><a href="#ref-target-{unique_id}">{seq}</a></sup>'
+            return f'<sup>[{seq}]</sup>'
+        return (
+            f'<sup id="ref-source-{unique_id}">'
+            f'<a href="#ref-target-{unique_id}">[{seq}]</a>'
+            f'</sup>'
+        )
 
     def _repl(match: re.Match[str]) -> str:
         nonlocal last_key, last_seq, last_pos

@@ -5,11 +5,11 @@ from pathlib import Path
 from extract_chat.context.document_context import DocumentContext
 from extract_chat.formatters.html_formatter import HTMLFormatter
 from extract_chat.formatters.markdown_formatter import MarkdownFormatter
-from extract_chat.formatters.reference_utils import (
+from extract_chat.processors.reference_processing.reference_utils import (
     extract_reference_groups,
     replace_inline_citation_markers,
 )
-from extract_chat.processors.citation_processor import CitationProcessor
+from extract_chat.processors.reference_processing.citation_processor import CitationProcessor
 from extract_chat.schemas.conversation import Conversation
 
 SAMPLE_PATH = Path("tmp/PA-Paper/chatgpt_convo_686ab2a1-6578-8003-b0e6-79b76323e002.json")
