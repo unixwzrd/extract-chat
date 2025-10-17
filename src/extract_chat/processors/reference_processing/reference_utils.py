@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections import deque
 from collections.abc import Mapping, Sequence
-from typing import Any, Deque, Dict, List
+from typing import Any, Deque, Dict, List, Tuple
 
 SHORT_SNIPPET_WORD_LIMIT = 2
 
@@ -174,7 +174,12 @@ def replace_inline_citation_markers(
             return match.group(0)
         seq, unique_id, label = queue.popleft()
         if last_key and last_key[0] == ref_id and abs(start_line - last_key[1]) <= 3 and abs(end_line - last_key[2]) <= 3:
-            return _emit_anchor(unique_id)
+            if last_seq is not None and seq == last_seq:
+                return _emit_anchor(unique_id)
+            last_key = key
+            last_seq = seq
+            last_pos = match.start()
+            return _emit_sup(seq, unique_id)
         if last_seq is not None and seq == last_seq and last_pos is not None and match.start() - last_pos < 50:
             last_key = key
             return _emit_anchor(unique_id)
@@ -345,44 +350,67 @@ def _merge_groups_by_base_url(groups: List[Dict[str, Any]]) -> List[Dict[str, An
             initial_groups[group_key] = []
         initial_groups[group_key].append(group)
     
-    # Step 2: Merge groups with same base URL and short text snippets
-    merged_groups = {}
-    base_url_to_groups = {}
-    
-    for group_key, group_list in initial_groups.items():
+    # Step 2: Merge groups with same base URL when their snippets truly align
+    final_groups: List[Dict[str, Any]] = []
+    base_url_clusters: Dict[str, List[tuple[str, List[Dict[str, Any]]]]] = {}
+
+    for group_list in initial_groups.values():
         if not group_list:
             continue
-            
-        # Get base URL and text snippet info from first group
-        first_group = group_list[0]
-        meta = first_group.get("meta") or {}
-        url = meta.get("url", "")
+
+        first_meta = group_list[0].get("meta") or {}
+        url = first_meta.get("url", "")
         base_url = _get_base_url(url)
-        text = meta.get("text", "")
-        
-        # If base_url exists and text is short (like LinkedIn), group by base_url
-        # Use string length instead of word count for better performance
-        if base_url and len(text) <= 200:  # Short snippet threshold (200 chars)
-            if base_url not in base_url_to_groups:
-                base_url_to_groups[base_url] = []
-            base_url_to_groups[base_url].extend(group_list)
+        text_sample = first_meta.get("text", "") or ""
+
+        if base_url:
+            title_norm = _normalize_text(first_meta.get("reference_title") or first_meta.get("title"))
+            clusters = base_url_clusters.setdefault(base_url, [])
+            for group in group_list:
+                placed = False
+                group_meta = group.get("meta") or {}
+                group_title = _normalize_text(group_meta.get("reference_title") or group_meta.get("title"))
+                group_text = group_meta.get("text") or ""
+                group_snippet_norm = _normalize_snippet(group_text)
+                group_len = len(group_text or "")
+                for idx, (cluster_title, cluster_groups) in enumerate(clusters):
+                    allow_merge = cluster_title == group_title
+                    if not allow_merge and group_snippet_norm:
+                        cluster_meta = cluster_groups[0].get("meta") or {}
+                        cluster_text = cluster_meta.get("text") or ""
+                        cluster_snippet_norm = _normalize_snippet(cluster_text)
+                        cluster_len = len(cluster_text or "")
+                        cluster_word_count = _snippet_word_count(cluster_text)
+                        group_word_count = _snippet_word_count(group_text)
+                        if (
+                            cluster_snippet_norm
+                            and cluster_snippet_norm == group_snippet_norm
+                            and max(group_len, cluster_len) <= 200
+                        ):
+                            allow_merge = True
+                        elif (
+                            group_word_count <= SHORT_SNIPPET_WORD_LIMIT
+                            or cluster_word_count <= SHORT_SNIPPET_WORD_LIMIT
+                        ):
+                            allow_merge = True
+                    if not allow_merge:
+                        continue
+                    if any(_snippets_should_merge(group, existing) for existing in cluster_groups):
+                        cluster_groups.append(group)
+                        placed = True
+                        break
+                if not placed:
+                    clusters.append((group_title, [group]))
         else:
-            # Keep original grouping
-            merged_groups[group_key] = group_list
-    
-    # Add merged base URL groups
-    for base_url, all_groups in base_url_to_groups.items():
-        merged_groups[f"merged_url:{base_url}"] = all_groups
-    
-    # Convert back to list format
-    final_groups = []
-    for group_list in merged_groups.values():
-        if len(group_list) == 1:
-            final_groups.append(group_list[0])
-        else:
-            # Merge multiple groups into one
-            final_groups.append(_combine_reference_group_cluster(group_list))
-    
+            final_groups.extend(group_list)
+
+    for clusters in base_url_clusters.values():
+        for cluster_title, cluster_groups in clusters:
+            if len(cluster_groups) == 1:
+                final_groups.append(cluster_groups[0])
+            else:
+                final_groups.append(_combine_reference_group_cluster(cluster_groups))
+
     return final_groups
 
 

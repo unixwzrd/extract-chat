@@ -206,6 +206,35 @@ class CitationProcessor:
                 ref["seq"] = identity_seq_map[identity]
             else:
                 identity_seq_map[identity] = ref.get("seq", 0)
+
+        # Normalize sequence numbering so that the deduplicated reference list and
+        # inline markers share the same contiguous numbering.
+        try:
+            from extract_chat.processors.reference_processing.reference_utils import extract_reference_groups
+        except ImportError:
+            extract_reference_groups = None
+
+        if extract_reference_groups:
+            blocks = [
+                {
+                    "type": "assistant",
+                    "references_table": {"references": payload},
+                    "metadata": {"reference_turn_number": ref_turn_counter},
+                }
+            ]
+            groups = extract_reference_groups(blocks)
+            max_seq_assigned = 0
+            for group in groups:
+                meta = group.get("meta") or {}
+                try:
+                    seq_val = int(meta.get("seq", 0))
+                except (TypeError, ValueError):
+                    continue
+                if seq_val > max_seq_assigned:
+                    max_seq_assigned = seq_val
+            if max_seq_assigned:
+                next_global_seq = max(next_global_seq, max_seq_assigned + 1)
+
         return {"references": payload}, next_global_seq
 
     # ------------------------------------------------------------------
@@ -687,9 +716,10 @@ class CitationProcessor:
     def _allocate_virtual_key(self, refs_by_key: Dict[MarkerKey, ReferenceEntry]) -> MarkerKey:
         """Generate a synthetic marker key when no direct one is available."""
 
-        ref_id = 0
         if refs_by_key:
-            ref_id = max(key[0] for key in refs_by_key.keys())
+            ref_id = max(key[0] for key in refs_by_key.keys()) + 1
+        else:
+            ref_id = 1
         base = 1_000_000
         offset = 0
         while True:
