@@ -3,12 +3,14 @@ from __future__ import annotations
 import re
 from collections import deque
 from collections.abc import Mapping, Sequence
-from typing import Any, Deque, Dict, List, Tuple
+from typing import Any, Callable, Deque, Dict, List, Tuple
 
 SHORT_SNIPPET_WORD_LIMIT = 2
 
 __all__ = [
     "extract_reference_groups",
+    "build_reference_payload",
+    "strip_sources_and_references",
     "generate_backlink_labels",
     "replace_inline_citation_markers",
     "format_apa_reference_entry",
@@ -86,6 +88,91 @@ def extract_reference_groups(conversation_blocks: Sequence[Mapping[str, Any]]) -
     return grouped_list
 
 
+def build_reference_payload(
+    conversation_blocks: Sequence[Mapping[str, Any]],
+    *,
+    occurrence_filter: Callable[[Dict[str, Any]], bool] | None = None,
+) -> Dict[str, Any]:
+    """Return canonical reference groups plus summary stats.
+
+    The payload annotates each occurrence with a stabilized backlink label so
+    renderers do not repeat lettering logic. Pass ``occurrence_filter`` when a
+    renderer needs to restrict which occurrences get backlinks (e.g. Jekyll
+    cross-page links that require a section slug).
+    """
+
+    groups = extract_reference_groups(conversation_blocks)
+
+    total_occurrences = 0
+    labeled_occurrences = 0
+    orphan_groups = 0
+
+    for group in groups:
+        occurrences = group.get("occurrences") or []
+        total_occurrences += len(occurrences)
+
+        valid_occurrences: List[Dict[str, Any]] = []
+        for occ in occurrences:
+            occ.pop("backlink_label", None)
+            if occurrence_filter is not None:
+                is_valid = bool(occurrence_filter(occ))
+            else:
+                is_valid = bool(occ.get("unique_id"))
+            occ["is_valid_backlink_target"] = bool(is_valid)
+            if is_valid:
+                valid_occurrences.append(occ)
+
+        labels = generate_backlink_labels(len(valid_occurrences))
+        for idx, occ in enumerate(valid_occurrences):
+            occ["backlink_label"] = labels[idx]
+
+        labeled_occurrences += len(valid_occurrences)
+        if not valid_occurrences:
+            orphan_groups += 1
+
+        for occ in occurrences:
+            occ.setdefault("backlink_label", "")
+
+        group.setdefault("stats", {})
+        group["stats"].update(
+            {
+                "total_occurrences": len(occurrences),
+                "labeled_occurrences": len(valid_occurrences),
+            }
+        )
+
+    payload = {
+        "groups": groups,
+        "stats": {
+            "total_references": len(groups),
+            "total_occurrences": total_occurrences,
+            "labeled_occurrences": labeled_occurrences,
+            "orphan_references": orphan_groups,
+        },
+    }
+    return payload
+
+
+def strip_sources_and_references(text: str) -> tuple[str, str]:
+    """Remove assistant-provided sources block and trailing references headings."""
+
+    if not text:
+        return text, ""
+
+    sources_block = ""
+    pattern = re.compile(r"\*\*Sources:\*\*.*?(?=## References|\Z)", re.S)
+    match = pattern.search(text)
+    if match:
+        sources_block = match.group(0).strip()
+        text = text[: match.start()] + text[match.end():]
+
+    text = text.rstrip()
+    if "## References" in text:
+        text = text.split("## References", 1)[0].rstrip()
+
+    return text, sources_block
+
+
 def generate_backlink_labels(count: int) -> List[str]:
     alphabet = "abcdefghijklmnopqrstuvwxyz"
     labels: List[str] = []
@@ -133,7 +220,8 @@ def replace_inline_citation_markers(
         except (TypeError, ValueError):
             continue
         unique_id = ref.get("unique_id")
-        label = (ref.get("occurrence_label") or "").strip()
+        label = ""
+        ref["occurrence_label"] = ""
         if ref.get("skip_citation"):
             suppressed_keys.add((ref_id, start, end))
             continue

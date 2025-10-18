@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Sequence
+from pathlib import Path
+from typing import Any, Dict, List, Sequence, Tuple
 
 from extract_chat.context.document_context import DocumentContext
 from extract_chat.processors.reference_processing.citation_processor import (
     CitationProcessor,
 )
 from extract_chat.processors.reference_processing.reference_utils import (
-    extract_reference_groups,
+    build_reference_payload,
     format_apa_reference_entry,
-    generate_backlink_labels,
     replace_inline_citation_markers,
+    strip_sources_and_references,
 )
 
 
@@ -60,6 +61,7 @@ class JekyllTurnExporter:
         conversation,
         turn_id: str,
         reference_page_title: str = "References",
+        audit_dir: Path | None = None,
     ) -> tuple[List[JekyllPage], JekyllPage]:
         """Return a list of section pages and a references page for the given turn."""
 
@@ -88,15 +90,12 @@ class JekyllTurnExporter:
             processed_content,
             base_slug=self.base_slug,
         )
-        processed_content, sources_block = _strip_sources_and_references(processed_content)
+        processed_content, sources_block = strip_sources_and_references(processed_content)
 
         sections = _split_sections(processed_content)
 
         if not sections:
             raise ValueError("No sections found in assistant turn content")
-
-        if sources_block and sections:
-            sections[-1].body = (sections[-1].body + "\n\n" + sources_block.strip()).strip()
 
         section_pages: List[JekyllPage] = []
         occurrence_links: Dict[str, str] = {}
@@ -126,11 +125,19 @@ class JekyllTurnExporter:
                 )
             )
 
-        references_page = self._build_references_page(
+        references_page, reference_groups = self._build_references_page(
             references_table.get("references", []),
             occurrence_links,
             section_count=len(section_pages),
             title=reference_page_title,
+        )
+
+        _write_reference_audit(
+            sources_block=sources_block,
+            references=references_table.get("references", []),
+            groups=reference_groups,
+            base_slug=self.base_slug,
+            output_dir=audit_dir,
         )
 
         return section_pages, references_page
@@ -142,7 +149,7 @@ class JekyllTurnExporter:
         section_count: int,
         *,
         title: str,
-    ) -> JekyllPage:
+    ) -> tuple[JekyllPage, List[Dict]]:
         blocks = [
             {
                 "type": "assistant",
@@ -150,7 +157,13 @@ class JekyllTurnExporter:
                 "metadata": {"reference_turn_number": 1},
             }
         ]
-        groups = extract_reference_groups(blocks)
+        payload = build_reference_payload(
+            blocks,
+            occurrence_filter=lambda occ: bool(
+                occ.get("unique_id") and occurrence_links.get(occ.get("unique_id"))
+            ),
+        )
+        groups = payload["groups"]
 
         lines: List[str] = ["## References", ""]
 
@@ -184,16 +197,17 @@ class JekyllTurnExporter:
                     text = self._clean_text_for_jekyll(text)
                     snippet = f'"{text}"'
 
-            backlink_labels = generate_backlink_labels(len(occurrences))
             backlinks: List[str] = []
-            for idx, occ in enumerate(occurrences):
+            for occ in occurrences:
                 uid = occ.get("unique_id")
                 if not uid:
                     continue
                 slug = occurrence_links.get(uid)
                 if not slug:
                     continue
-                label = (occ.get("occurrence_label") or "").strip() or backlink_labels[idx]
+                label = (occ.get("backlink_label") or "").strip()
+                if not label:
+                    continue
                 backlinks.append(
                     f"[{label}^]({self.base_slug}-{slug}.md#ref-source-{uid})"
                 )
@@ -228,7 +242,7 @@ class JekyllTurnExporter:
             filename=filename,
             permalink=references_permalink,
             content=front_matter + markdown,
-        )
+        ), groups
 
 
 @dataclass
@@ -250,19 +264,6 @@ def _slugify(value: str) -> str:
     return normalized.strip("-") or "section"
 
 
-def _strip_sources_and_references(text: str) -> tuple[str, str]:
-    sources_block = ""
-    pattern = re.compile(r"\*\*Sources:\*\*.*?(?=## References|\Z)", re.S)
-    match = pattern.search(text)
-    if match:
-        sources_block = match.group(0).strip()
-        text = text[: match.start()] + text[match.end():]
-    text = text.rstrip()
-    if "## References" in text:
-        text = text.split("## References", 1)[0].rstrip()
-    return text, sources_block
-
-
 def _rewrite_reference_links(text: str, *, base_slug: str) -> str:
     refs_url = f"{base_slug}-references"
     return re.sub(
@@ -270,6 +271,200 @@ def _rewrite_reference_links(text: str, *, base_slug: str) -> str:
         lambda m: f'href="{refs_url}.md#{m.group(1)}"',
         text,
     )
+
+
+def _parse_sources_block(sources_block: str) -> List[Dict[str, Any]]:
+    if not sources_block:
+        return []
+    entries: List[Dict[str, Any]] = []
+    entry_pattern = re.compile(r"^\s*(\d+)\.\s*(.*?)(?=\n\s*\d+\.\s*|$)", re.S | re.M)
+    marker_pattern = re.compile(r"【(\d+)†L(\d+)-L(\d+)】")
+    uid_pattern = re.compile(r"ref-source-([A-Za-z0-9_]+)")
+    for match in entry_pattern.finditer(sources_block.strip()):
+        index = int(match.group(1))
+        body = match.group(2).strip()
+        markers: List[Tuple[int, int, int]] = []
+        for marker in marker_pattern.finditer(body):
+            markers.append(
+                (int(marker.group(1)), int(marker.group(2)), int(marker.group(3)))
+            )
+        unique_ids = uid_pattern.findall(body)
+        clean_text = marker_pattern.sub("", body)
+        clean_text = re.sub(r"<sup[^>]*>.*?</sup>", "", clean_text)
+        clean_text = re.sub(r"</?a[^>]*>", "", clean_text)
+        clean_text = re.sub(r"<[^>]+>", "", clean_text).strip()
+        entries.append(
+            {
+                "index": index,
+                "raw_text": body,
+                "clean_text": clean_text,
+                "markers": markers,
+                "unique_ids": unique_ids,
+            }
+        )
+    return entries
+
+
+def _format_marker(marker: Tuple[int, int, int]) -> str:
+    ref_id, start, end = marker
+    return f"【{ref_id}†L{start}-L{end}】"
+
+
+def _write_reference_audit(
+    *,
+    sources_block: str,
+    references: Sequence[Dict[str, Any]],
+    groups: List[Dict[str, Any]],
+    base_slug: str,
+    output_dir: Path | None = None,
+) -> None:
+    sources = _parse_sources_block(sources_block)
+    if not sources:
+        return
+
+    marker_map: Dict[Tuple[int, int, int], set[int]] = {}
+    unique_id_map: Dict[str, int] = {}
+    for ref in references or []:
+        if ref.get("skip_citation"):
+            continue
+        try:
+            seq = int(ref.get("seq", 0))
+            ref_id = int(ref.get("ref_id", 0))
+            start = int(ref.get("start_line", 0))
+            end = int(ref.get("end_line", 0))
+        except (TypeError, ValueError):
+            continue
+        if seq <= 0:
+            continue
+        marker_map.setdefault((ref_id, start, end), set()).add(seq)
+        uid = ref.get("unique_id")
+        if isinstance(uid, str) and uid:
+            unique_id_map.setdefault(uid, seq)
+
+    seq_to_meta: Dict[int, Dict[str, Any]] = {}
+    for group in groups:
+        meta = group.get("meta") or {}
+        seq = meta.get("seq")
+        try:
+            seq_int = int(seq)
+        except (TypeError, ValueError):
+            seq_int = 0
+        if seq_int <= 0:
+            occs = group.get("occurrences") or []
+            for occ in occs:
+                try:
+                    seq_int = int(occ.get("seq", 0))
+                except (TypeError, ValueError):
+                    seq_int = 0
+                if seq_int > 0:
+                    break
+        if seq_int > 0:
+            seq_to_meta.setdefault(seq_int, meta)
+
+    audit_entries: List[Dict[str, Any]] = []
+    seq_to_source_indexes: Dict[int, List[int]] = {}
+
+    for entry in sources:
+        resolved_seqs: set[int] = set()
+        unmatched_markers: List[Tuple[int, int, int]] = []
+        for marker in entry["markers"]:
+            seqs = marker_map.get(marker)
+            if seqs:
+                resolved_seqs.update(seqs)
+            else:
+                unmatched_markers.append(marker)
+        for uid in entry.get("unique_ids", []):
+            seq = unique_id_map.get(uid)
+            if seq:
+                resolved_seqs.add(seq)
+
+        resolved_list = sorted(resolved_seqs)
+        for seq in resolved_list:
+            seq_to_source_indexes.setdefault(seq, []).append(entry["index"])
+
+        audit_entries.append(
+            {
+                "index": entry["index"],
+                "clean_text": entry["clean_text"],
+                "raw_text": entry["raw_text"],
+                "markers": entry["markers"],
+                "resolved_seqs": resolved_list,
+                "unmatched_markers": unmatched_markers,
+            }
+        )
+
+    duplicate_refs = {
+        seq: sorted(indexes)
+        for seq, indexes in seq_to_source_indexes.items()
+        if len(set(indexes)) > 1
+    }
+
+    total_sources = len(sources)
+    unresolved_count = sum(1 for entry in audit_entries if not entry["resolved_seqs"])
+
+    lines: List[str] = [
+        f"# Reference Audit for {base_slug}",
+        "",
+        "Generated from the assistant-provided **Sources** block and cross-referenced ",
+        "with canonical references resolved from metadata.",
+        "",
+        "## Summary",
+        f"- Total source entries: {total_sources}",
+        f"- Matched to canonical references: {total_sources - unresolved_count}",
+        f"- Unmatched entries: {unresolved_count}",
+    ]
+
+    if duplicate_refs:
+        dup_parts = [
+            f"Ref {seq} (sources {', '.join(str(idx) for idx in indexes)})"
+            for seq, indexes in sorted(duplicate_refs.items())
+        ]
+        lines.append(f"- Shared canonical references: {', '.join(dup_parts)}")
+    lines.append("")
+    lines.append("## Entries")
+    lines.append("")
+
+    for entry in sorted(audit_entries, key=lambda e: e["index"]):
+        lines.append(f"### Source {entry['index']}")
+        lines.append(entry["clean_text"] or entry["raw_text"])
+        lines.append("")
+        if entry["resolved_seqs"]:
+            lines.append("Matched references:")
+            for seq in entry["resolved_seqs"]:
+                meta = seq_to_meta.get(seq, {})
+                title = (meta.get("reference_title") or meta.get("title") or "").strip()
+                url = (meta.get("url") or "").strip()
+                if url:
+                    lines.append(f"- Ref {seq}: {title} ({url})".strip())
+                else:
+                    lines.append(f"- Ref {seq}: {title or '<missing title>'}")
+        else:
+            lines.append("_No matching reference found in metadata._")
+
+        if entry["unmatched_markers"]:
+            lines.append(
+                "Markers without matches: "
+                + ", ".join(_format_marker(marker) for marker in entry["unmatched_markers"])
+            )
+
+        shared = [
+            seq
+            for seq in entry["resolved_seqs"]
+            if len(seq_to_source_indexes.get(seq, [])) > 1
+        ]
+        if shared:
+            lines.append(
+                "Shares canonical references with other sources: "
+                + ", ".join(f"Ref {seq}" for seq in shared)
+            )
+        lines.append("")
+
+    if output_dir is None:
+        audit_path = Path("tmp") / f"{base_slug}-reference-audit.md"
+    else:
+        audit_path = output_dir / f"{base_slug}-reference-audit.md"
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    audit_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
 def _split_sections(text: str) -> List[_Section]:
@@ -309,4 +504,3 @@ def _coerce_int(value, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
-

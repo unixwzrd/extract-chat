@@ -46,6 +46,9 @@ TurnProcessorV2
 FormatterAdapter
    │   └─ presents processed blocks to the selected formatter
    ▼
+Reference Payload Builder
+   │   └─ deduplicates references & assigns alphabetical backlinks
+   ▼
 Formatter (Markdown | HTML | JekyllTurnExporter)
    │
    ▼
@@ -58,6 +61,8 @@ Key components live under `src/extract_chat/`:
   structured blocks for each turn.
 - `processors/citation_processor.py` – merges citation metadata and assigns
   stable sequence numbers.
+- `processors/reference_processing/reference_utils.py` – shared helpers and the
+  canonical reference payload builder consumed by every formatter.
 - `formatters/markdown_formatter.py` – renders Markdown output with bidirectional
   references.
 - `formatters/html_formatter.py` – mirrors the Markdown references and supports
@@ -69,9 +74,10 @@ Key components live under `src/extract_chat/`:
 
 Citations in the source JSON (`citations` and `content_references`) are merged into
 single reference groups. Inline markers become superscript links (`<sup>1</sup>`)
-that point to the globally numbered references list. Each entry includes a backlink
-so readers can navigate from the references to the citation location (supported in
-all formats).
+that point to the globally numbered references list, while the shared payload builder
+assigns alphabetical backlinks (`a^`, `b^`, …) to every occurrence. Assistant-provided
+`**Sources:**` blocks are stripped before rendering so only canonical metadata reaches
+Markdown, HTML, or Jekyll outputs.
 
 ## Development Notes
 

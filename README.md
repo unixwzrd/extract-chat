@@ -9,6 +9,7 @@ Extract ChatGPT conversations from exported JSON files and render them as Markdo
 - **Multi-format Export**: Generate Markdown, HTML, or Jekyll-ready section pages
 - **Intelligent Citation Processing**: Detects and processes inline citation markers like `【refId†Lstart-Lend】`
 - **Advanced Reference Grouping**: Sophisticated two-step algorithm that properly groups references while preventing incorrect merging of distinct articles
+- **Canonical Reference Payload**: Shared sequencing/backlink metadata keeps Markdown, HTML, and Jekyll outputs aligned with alphabetical backlinks
 - **Unicode Cleanup**: Integrated UnicodeFix for clean, professional output
 - **Cross-page Citation Links**: Maintains working citation links across Jekyll section pages
 - **Metadata Merging**: Combines data from both `citations` and `content_references` for complete reference information
@@ -75,22 +76,22 @@ extract-chat path/to/conversation.json \
 
 ### Markdown Citations
 
-- Inline markers in the model response like `【1†28:249-258】` become superscript links with anchors at the citation site
+- Inline markers in the model response like `` become superscript links with anchors at the citation site
 - Example: `<sup id="cite-1_28_249_258"><a href="#ref-1_28_249_258">1</a></sup>`
-- The References section renders entries per turn/reference with anchors like `<a id="ref-1_28_249_258"></a>`
-- Each reference includes a back-link `[↩︎](#cite-1_28_249_258)`
+- The References section renders entries per turn/reference with anchors like `<a id="ref-1_28_249_258"></a>` and alphabetical backlinks (`[a^]`, `[b^]`, ...)
+- Assistant-provided `**Sources:**` blocks are stripped before rendering so hallucinated lists are not echoed in the final document
 
 ### HTML Citations
 
-- HTML output mirrors the Markdown citation structure
+- HTML output mirrors the Markdown citation structure and alphabetical backlinks
 - Superscript anchors link forward to the references section
-- Each reference includes a backlink to the originating citation
+- Each reference includes a backlink to the originating citation, and assistant `Sources` blocks are removed from the rendered HTML
 
 ### Jekyll Citations
 
-- Cross-page citation linking using Jekyll's `relative_url` helper
+- Cross-page citation linking using Jekyll's `relative_url` helper with shared alphabetical backlinks
 - Stable cross-page links regardless of site base paths
-- Separate references page with comprehensive citation management
+- Separate references page with comprehensive citation management and an audit file written alongside the exported bundle
 
 ## Reference Processing
 
@@ -98,6 +99,83 @@ The system includes sophisticated reference grouping and processing:
 
 - **Two-step Grouping Algorithm**: Groups by `reference_title` with text preview, then merges groups with same `base_url` and short snippets
 - **Reference Title Prioritization**: Uses `source_label` when available, falls back to `title`
+- **Canonical Payload Builder**: Produces deduplicated metadata, alphabetical backlinks, and summary stats for every formatter
+- **Unicode Cleanup**: Integrated UnicodeFix for clean, professional output
+- **Pipe Character Escaping**: Prevents Jekyll table interpretation issues
+
+## Development Installation
+
+For development work (editable install):
+
+```bash
+pip install -e .
+```
+
+This uses the `src` layout. The package name is `extract-chat` and the import is `extract_chat`.
+
+The command line entry point exposed by the package is `extract-chat`.
+
+## Quick Start
+
+```bash
+# Markdown (default)
+extract-chat path/to/conversation.json -o out.md
+
+# HTML with optional CSS
+extract-chat path/to/conversation.json --format html --css-file styles/site.css --output out.html
+
+# Jekyll section export (writes multiple files into a directory)
+extract-chat path/to/conversation.json \
+  --format jekyll \
+  --jekyll-turn-id c3df4f37-ab12-4ab6-a810-6b687a759b83 \
+  --jekyll-base-slug 2025-09-25-pa-paper \
+  --output tmp/jekyll-pages
+```
+
+## CLI Usage
+
+### Common Options
+
+- `-f, --format`: `markdown` (default), `html`, or `jekyll`
+- `-o, --output`: Output file for Markdown/HTML. For Jekyll, this should be a directory where the section pages will be written
+- `-c, --css-file`: Custom CSS path for HTML output (optional)
+- `--force`: Overwrite the destination if it already exists
+
+### Jekyll-Specific Options
+
+- `--jekyll-turn-id`: (Required when `--format jekyll`) Assistant turn identifier to export
+- `--jekyll-base-slug`: Base slug used for generated filenames/permalinks. When omitted we attempt to derive one from the conversation title
+- `--jekyll-layout`: Front-matter `layout` value for Jekyll pages (defaults to `page`)
+- `--jekyll-reference-title`: Title used for the generated references page (defaults to `References`)
+
+## Citation System
+
+### Markdown Citations
+
+- Inline markers in the model response like `` become superscript links with anchors at the citation site
+- Example: `<sup id="cite-1_28_249_258"><a href="#ref-1_28_249_258">1</a></sup>`
+- The References section renders entries per turn/reference with anchors like `<a id="ref-1_28_249_258"></a>` and alphabetical backlinks (`[a^]`, `[b^]`, ...)
+- Assistant-provided `**Sources:**` blocks are stripped before rendering so hallucinated lists are not echoed in the final document
+
+### HTML Citations
+
+- HTML output mirrors the Markdown citation structure and alphabetical backlinks
+- Superscript anchors link forward to the references section
+- Each reference includes a backlink to the originating citation, and assistant `Sources` blocks are removed from the rendered HTML
+
+### Jekyll Citations
+
+- Cross-page citation linking using Jekyll's `relative_url` helper with shared alphabetical backlinks
+- Stable cross-page links regardless of site base paths
+- Separate references page with comprehensive citation management and an audit file written alongside the exported bundle
+
+## Reference Processing
+
+The system includes sophisticated reference grouping and processing:
+
+- **Two-step Grouping Algorithm**: Groups by `reference_title` with text preview, then merges groups with same `base_url` and short snippets
+- **Reference Title Prioritization**: Uses `source_label` when available, falls back to `title`
+- **Canonical Payload Builder**: Produces deduplicated metadata, alphabetical backlinks, and summary stats for every formatter
 - **Unicode Cleanup**: Integrated UnicodeFix for clean, professional output
 - **Pipe Character Escaping**: Prevents Jekyll table interpretation issues
 
@@ -152,7 +230,7 @@ We welcome contributions! Here's how you can help:
 
 2. **Feature Requests**: Have an idea? Open an issue to discuss it
 
-3. **Code Contributions**: 
+3. **Code Contributions**:
    - Fork the repository
    - Create a feature branch
    - Make your changes
@@ -186,7 +264,7 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed release notes and changes.
 
 ## License
 
-Copyright (c) 2025 unixwzrd
+Copyright (c) 2025 <a href="mailto:unixwzrd@unixwzrd.ai">unixwzrd@unixwzrd.ai</a>
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
@@ -197,3 +275,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Integrates with [ftfy](https://github.com/rspeer/python-ftfy) for text normalization
 - Designed for Jekyll static site generation
 - Leverages modern Python type hints and data modeling
+
+**Last updated:**
+*Last updated: 2025-10-18*

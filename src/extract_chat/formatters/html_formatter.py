@@ -26,9 +26,8 @@ def _normalize_reference_text(value: str) -> str:
 from extract_chat.css_manager import create_inline_css_style, get_css_content
 from extract_chat.formatters.base import BaseFormatter, FormattingError
 from extract_chat.processors.reference_processing.reference_utils import (
-    extract_reference_groups,
+    build_reference_payload,
     format_apa_reference_entry,
-    generate_backlink_labels,
     replace_inline_citation_markers,
 )
 
@@ -258,7 +257,8 @@ class HTMLFormatter(BaseFormatter):
     ) -> tuple[str, List[Dict[str, Any]]]:
         """Aggregate references across assistant blocks and render as an HTML section."""
         try:
-            groups = extract_reference_groups(content_blocks)
+            payload = build_reference_payload(content_blocks)
+            groups = payload.get("groups", [])
             if not groups:
                 return "", []
 
@@ -292,12 +292,13 @@ class HTMLFormatter(BaseFormatter):
                 snippet_html = f'<span class="excerpt">“{escape(snippet)}”</span>' if snippet else ''
 
                 backlinks: List[str] = []
-                default_letters = generate_backlink_labels(len(occurrences))
-                for idx, occ in enumerate(occurrences):
+                for occ in occurrences:
                     uid = occ.get('unique_id')
                     if not uid:
                         continue
-                    label = (occ.get('occurrence_label') or '').strip() or default_letters[idx]
+                    label = (occ.get('backlink_label') or '').strip()
+                    if not label:
+                        continue
                     link = f'<a class="backref" href="#ref-source-{uid}">{label}^</a>'
                     backlinks.append(link)
 

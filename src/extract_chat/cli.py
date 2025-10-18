@@ -143,6 +143,7 @@ def main() -> None:
                     conversation=conversation,
                     turn_id=turn_id,
                     reference_page_title=args.jekyll_reference_title,
+                    audit_dir=output_dir,
                 )
 
                 all_pages = sections + [references_page]

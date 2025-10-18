@@ -129,11 +129,15 @@ class CitationProcessor:
                     entry.skip_citation = False
         # Set reference_title after source_label is populated
         for entry in refs_by_key.values():
-            # Always set reference_title: use source_label if available, otherwise use title
-            if entry.source_label:
-                entry.reference_title = entry.source_label
-            elif entry.title:
+            # Prefer canonical title, then source label, then snippet/url fallback
+            if entry.title:
                 entry.reference_title = entry.title
+            elif entry.source_label:
+                entry.reference_title = entry.source_label
+            elif entry.text:
+                entry.reference_title = entry.text
+            elif entry.url:
+                entry.reference_title = entry.url
 
         next_global_seq = self._assign_sequences(
             refs_by_key,
@@ -210,7 +214,9 @@ class CitationProcessor:
         # Normalize sequence numbering so that the deduplicated reference list and
         # inline markers share the same contiguous numbering.
         try:
-            from extract_chat.processors.reference_processing.reference_utils import extract_reference_groups
+            from extract_chat.processors.reference_processing.reference_utils import (
+                extract_reference_groups,
+            )
         except ImportError:
             extract_reference_groups = None
 

@@ -9,10 +9,10 @@ from typing import Any, Dict, List, Optional
 
 from extract_chat.formatters.base import BaseFormatter, FormattingError
 from extract_chat.processors.reference_processing.reference_utils import (
-    extract_reference_groups,
+    build_reference_payload,
     format_apa_reference_entry,
-    generate_backlink_labels,
     replace_inline_citation_markers,
+    strip_sources_and_references,
 )
 
 logger = logging.getLogger(__name__)
@@ -280,6 +280,7 @@ class MarkdownFormatter(BaseFormatter):
                             processed_content = replace_inline_citation_markers(
                                 processed_content, refs_block.get('references', [])
                             )
+                        processed_content, _ = strip_sources_and_references(processed_content)
                         lines.append(processed_content)
                         lines.append("")
                         # No per-block references; a single global References section is appended later
@@ -313,6 +314,7 @@ class MarkdownFormatter(BaseFormatter):
                         refs_block = block.get('references_table')
                         if refs_block and refs_block.get('references'):
                             content = replace_inline_citation_markers(content, refs_block.get('references', []))
+                        content, _ = strip_sources_and_references(content)
                         lines.append(content)
                         lines.append("")
                     continue
@@ -431,10 +433,9 @@ class MarkdownFormatter(BaseFormatter):
         refs_block = block.get('references_table')
         if content and refs_block and refs_block.get('references'):
             content = replace_inline_citation_markers(content, refs_block.get('references', []))
+        content, _ = strip_sources_and_references(content)
         if content:
             formatted_content = self._format_content_with_backticks(content)
-            if '**Sources:**' in formatted_content:
-                formatted_content = formatted_content.split('**Sources:**', 1)[0].rstrip()
             lines.append(formatted_content)
             logging.getLogger(__name__).debug("Added content for %s block %s - length: %d", author, turn_id, len(formatted_content))
         else:
@@ -456,7 +457,8 @@ class MarkdownFormatter(BaseFormatter):
         citations (by seq) under each reference entry.
         """
         try:
-            groups = extract_reference_groups(conversation_blocks)
+            payload = build_reference_payload(conversation_blocks)
+            groups = payload.get('groups', [])
             if not groups:
                 return ""
 
@@ -488,12 +490,13 @@ class MarkdownFormatter(BaseFormatter):
                     text_snippet = (meta.get('text') or '').strip().replace('\n', ' ')
 
                 backlinks: List[str] = []
-                default_letters = generate_backlink_labels(len(occurrences))
-                for idx, occ in enumerate(occurrences):
+                for occ in occurrences:
                     uid = occ.get('unique_id')
                     if not uid:
                         continue
-                    label = (occ.get('occurrence_label') or '').strip() or default_letters[idx]
+                    label = (occ.get('backlink_label') or '').strip()
+                    if not label:
+                        continue
                     backlinks.append(f"[{label}^](#ref-source-{uid})")
 
                 pieces = [f"- {citation_label}. {apa_citation}"]

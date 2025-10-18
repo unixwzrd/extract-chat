@@ -1,5 +1,15 @@
 # Changelog
 
+## 2025-10-18
+
+### Reference Pipeline Cleanup
+
+- Introduced a **canonical reference payload builder** that deduplicates metadata once and feeds the numbering/backlink data to every formatter.
+- Switched Markdown, HTML, and Jekyll formatters to consume the shared payload so they now emit identical reference ordering and alphabetical backlink labels (`a^`, `b^`, ...).
+- Centralized stripping of assistant-provided `**Sources:**` blocks so they no longer leak into Markdown/HTML exports and Jekyll sections.
+- Updated the Jekyll exporter to drop the reference audit alongside the generated bundle, keeping diagnostics with each run.
+- Added targeted tests covering the payload builder and formatter parity.
+
 ## 2025-09-28
 
 ### Major Improvements
