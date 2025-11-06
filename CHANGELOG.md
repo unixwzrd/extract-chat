@@ -1,5 +1,13 @@
 # Changelog
 
+## 2025-11-06
+
+### Bug Fixes
+
+- Coerce numeric `async_status` values to strings during `Conversation` schema validation to match upstream exports.
+- Reworked turn traversal to use iterative stacks, preventing recursion depth errors on deeply nested conversations.
+- Added regression tests covering numeric `async_status` parsing and deep conversation traversal.
+
 ## 2025-10-18
 
 ### Reference Pipeline Cleanup
@@ -26,7 +34,7 @@
   - Preserved Unicode characters in other contexts while ensuring clean Jekyll output
   - Updated dependencies to include `unicodefix @ git+https://github.com/unixwzrd/UnicodeFix.git`
 
-- **Reference Display Improvements**: 
+- **Reference Display Improvements**:
   - Implemented `reference_title` field that prioritizes `source_label` when available, falling back to `title`
   - Updated all formatters and processors to use `reference_title` for consistent display
   - Added pipe character escaping (`|` → `\|`) specifically for reference titles to prevent Jekyll table interpretation

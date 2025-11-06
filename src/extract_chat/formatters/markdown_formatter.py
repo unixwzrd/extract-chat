@@ -718,12 +718,17 @@ class MarkdownFormatter(BaseFormatter):
             print(f"DEBUG: _format_internal_dialogue_block_dict called with block: {block.get('role', 'unknown')}")
         turn_id = block.get('metadata', {}).get('turn_id', 'unknown')
         role = block.get('role', 'assistant')
-        content = block.get('content', '')
+        raw_content = block.get('content', '')
         timestamp = block.get('metadata', {}).get('timestamp')
         additional_info = block.get('additional_info', {})
 
         if self.config.get('verbose'):
-            print(f"DEBUG: Internal block - role: {role}, content length: {len(content)}")
+            content_preview = raw_content
+            if isinstance(raw_content, dict):
+                content_preview = raw_content.get('text', '')
+            print(
+                f"DEBUG: Internal block - role: {role}, content length: {len(content_preview)}"
+            )
 
         # Format timestamp
         timestamp_str = ""
@@ -794,7 +799,68 @@ class MarkdownFormatter(BaseFormatter):
                     lines.append(f"- {metadata_line}")
 
         lines.append("")
-        lines.append(content)
+
+        content_type = "text"
+        language = None
+        text_content = ""
+        thoughts: List[str] = []
+        search_queries = []
+        search_results = []
+
+        if isinstance(raw_content, dict):
+            content_type = raw_content.get('content_type') or "text"
+            language = raw_content.get('language')
+            text_content = raw_content.get('text') or ""
+            thoughts = list(raw_content.get('thoughts') or [])
+            search_queries = list(raw_content.get('search_queries') or [])
+            search_results = list(raw_content.get('search_result_groups') or [])
+        else:
+            text_content = str(raw_content) if raw_content is not None else ""
+
+        if text_content:
+            if content_type == 'code':
+                if language and language not in {"", "unknown"}:
+                    lines.append(f"```{language}")
+                else:
+                    lines.append("```")
+                lines.append(text_content)
+                lines.append("```")
+            else:
+                lines.append(text_content)
+
+        if thoughts:
+            lines.append("")
+            lines.append("**Thoughts:**")
+            for thought in thoughts:
+                lines.append(f"- {thought}")
+
+        if search_queries:
+            lines.append("")
+            lines.append("**Search Queries:**")
+            for query in search_queries:
+                if isinstance(query, dict):
+                    query_text = query.get('q') or query.get('text')
+                else:
+                    query_text = str(query)
+                if query_text:
+                    lines.append(f"- {query_text}")
+
+        if search_results:
+            lines.append("")
+            lines.append("**Search Results:**")
+            for group in search_results:
+                if not isinstance(group, dict):
+                    lines.append(f"- {group}")
+                    continue
+                domain = group.get('domain', 'unknown')
+                entries = group.get('entries') or []
+                lines.append(f"- {domain}: {len(entries)} entries")
+                for entry in entries[:2]:
+                    if isinstance(entry, dict):
+                        title = entry.get('title') or entry.get('url') or ''
+                        if title:
+                            lines.append(f"  - {title}")
+
         lines.append("")
 
         result = "\n".join(lines)

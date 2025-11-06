@@ -3,7 +3,7 @@
 Turn Processor V2 - Uses parent-child traversal for correct conversation flow.
 """
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from extract_chat.context.document_context import DocumentContext
 from extract_chat.processors.reference_processing.citation_processor import (
@@ -56,28 +56,39 @@ class TurnProcessorV2:
         logger.info(f"Processed {len(final_blocks)} blocks total")
         return final_blocks
 
-    def _traverse_turn(self, mapping: Dict[str, Any], turn_id: str, visited: set, level: int = 0) -> List[Dict[str, Any]]:
-        """Traverse a turn and its children recursively."""
-        if turn_id in visited:
+    def _traverse_turn(
+        self,
+        mapping: Dict[str, Any],
+        root_id: str,
+        visited: Set[str],
+    ) -> List[Dict[str, Any]]:
+        """Traverse a turn hierarchy iteratively to avoid recursion limits."""
+
+        if root_id in visited:
             return []
 
-        visited.add(turn_id)
-        turn_data = mapping.get(turn_id)
-        if not turn_data:
-            return []
+        blocks: List[Dict[str, Any]] = []
+        stack: List[Tuple[str, int]] = [(root_id, 0)]
 
-        blocks = []
+        while stack:
+            turn_id, level = stack.pop()
 
-        # Process this turn
-        turn_block = self._process_single_turn(turn_data, turn_id, level)
-        if turn_block:
-            blocks.append(turn_block)
+            if turn_id in visited:
+                continue
 
-        # Process children in order
-        children = getattr(turn_data, 'children', [])
-        for child_id in children:
-            child_blocks = self._traverse_turn(mapping, child_id, visited, level + 1)
-            blocks.extend(child_blocks)
+            visited.add(turn_id)
+            turn_data = mapping.get(turn_id)
+            if not turn_data:
+                continue
+
+            turn_block = self._process_single_turn(turn_data, turn_id, level)
+            if turn_block:
+                blocks.append(turn_block)
+
+            children = getattr(turn_data, 'children', [])
+            for child_id in reversed(children):
+                if child_id not in visited:
+                    stack.append((child_id, level + 1))
 
         return blocks
 
