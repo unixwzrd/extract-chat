@@ -28,6 +28,7 @@ extract-chat conversation.json \
 | `-f, --format` | Output format (`markdown`, `html`, `jekyll`). Default is `markdown`. |
 | `-o, --output` | Destination file (Markdown/HTML) or directory (Jekyll). |
 | `-c, --css-file` | Optional CSS file path applied to HTML output. |
+| `-V, --version` | Show the installed `extract-chat` version and exit. |
 | `--force` | Overwrite the destination if it already exists. |
 | `--jekyll-turn-id` | Assistant turn identifier for Jekyll exports (required for `--format jekyll`). |
 | `--jekyll-base-slug` | Base slug used for section filenames/permalinks (Jekyll). |

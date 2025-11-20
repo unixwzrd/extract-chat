@@ -586,10 +586,21 @@ class TurnProcessorV2:
         if real_author and real_author.startswith('tool:'):
             return False
 
-        # Check for model_slug indicating internal processing (e.g., "research")
+        # model_slug: treat research/debug helper models as internal, allow normal chat models
         model_slug = metadata.get('model_slug', '')
-        if model_slug and model_slug != 'gpt-4-5' and model_slug != 'gpt-4':
-            return False
+        if model_slug:
+            internal_prefixes = (
+                'research',
+                'browser',
+                'analysis',
+                'search',
+                'tool',
+            )
+            internal_keywords = ('-browser', '-search', '-tool')
+            if any(model_slug.startswith(prefix) for prefix in internal_prefixes) or any(
+                kw in model_slug for kw in internal_keywords
+            ):
+                return False
 
         # Check for specific recipient indicating internal tool communication
         recipient = metadata.get('recipient', '')

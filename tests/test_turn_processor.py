@@ -38,3 +38,35 @@ def test_turn_processor_handles_deep_tree() -> None:
 
     assert len(blocks) == depth
 
+
+def test_assistant_visible_for_standard_models() -> None:
+    """Assistant turns using normal chat models (e.g., gpt-5-1) stay visible."""
+
+    mapping: Dict[str, Turn] = {
+        "u1": Turn(
+            id="u1",
+            parent=None,
+            children=["a1"],
+            message=Message(
+                author=MessageAuthor(role="user"),
+                content=MessageContent(text="Hi"),
+            ),
+        ),
+        "a1": Turn(
+            id="a1",
+            parent="u1",
+            children=[],
+            message=Message(
+                author=MessageAuthor(role="assistant"),
+                content=MessageContent(text="Hello back"),
+                metadata={"model_slug": "gpt-5-1"},
+            ),
+        ),
+    }
+
+    conversation = Conversation(mapping=mapping)
+    processor = TurnProcessorV2()
+
+    blocks = processor.process_conversation(conversation)
+
+    assert [b["type"] for b in blocks] == ["user", "assistant"]

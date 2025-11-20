@@ -8,7 +8,7 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="extract-chat",
-    version="0.1.0",
+    version="1.1.4",
     author="extract-chat maintainers",
     description="Extract ChatGPT conversations to Markdown/HTML with citations",
     long_description=long_description,

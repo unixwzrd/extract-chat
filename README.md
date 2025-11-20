@@ -63,6 +63,7 @@ extract-chat path/to/conversation.json \
 - `-f, --format`: `markdown` (default), `html`, or `jekyll`
 - `-o, --output`: Output file for Markdown/HTML. If you point this at an existing directory, we'll drop the output inside it using the input filename with the appropriate extension. For Jekyll, this should be a directory where the section pages will be written
 - `-c, --css-file`: Custom CSS path for HTML output (optional)
+- `-V, --version`: Show the installed `extract-chat` version and exit
 - `--force`: Overwrite the destination if it already exists
 
 ### Jekyll-Specific Options

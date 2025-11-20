@@ -1,5 +1,16 @@
 # Changelog
 
+## 2025-11-20 — 1.1.4
+
+### Enhancements
+
+- Added `-V/--version` flag and display of version in CLI help output.
+- Clarified README/docs with the new version flag.
+
+### Packaging
+
+- Bumped project version to 1.1.4 in `pyproject.toml`, `setup.py`, and package metadata.
+
 ## 2025-11-06
 
 ### Bug Fixes

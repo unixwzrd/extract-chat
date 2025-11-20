@@ -8,6 +8,7 @@ import re
 import sys
 from pathlib import Path
 
+from extract_chat import __version__
 from extract_chat.context.document_context import DocumentContext
 from extract_chat.formatters import HTMLFormatter, MarkdownFormatter
 from extract_chat.formatters.jekyll_formatter import JekyllTurnExporter
@@ -60,7 +61,7 @@ def _slugify(value: str | None) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Extract a ChatGPT conversation from JSON using chronological processing.",
+        description=f"Extract a ChatGPT conversation from JSON using chronological processing (v{__version__}).",
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument("input_file", help="Path to the input JSON file.")
@@ -73,6 +74,13 @@ def main() -> None:
     )
     parser.add_argument("-c", "--css-file", help="Path to a custom CSS file for HTML output.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose debug output.")
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Show program version and exit.",
+    )
     parser.add_argument("--log-file", help="Optional path to write logs to a file.")
     parser.add_argument("--force", action="store_true", help="Force overwrite existing files.")
     parser.add_argument("--jekyll-turn-id", help="Assistant turn ID to export when using --format jekyll.")
