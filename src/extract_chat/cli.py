@@ -181,26 +181,43 @@ def main() -> None:
             else:
                 formatter = MarkdownFormatter({"verbose": args.verbose})
 
+            base_name = os.path.splitext(os.path.basename(args.input_file))[0]
+            ext = "md" if args.format == "markdown" else "html"
+
             output_file = args.output
             if not output_file:
-                base_name = os.path.splitext(os.path.basename(args.input_file))[0]
-                ext = "md" if args.format == "markdown" else "html"
                 output_file = f"{base_name}.{ext}"
 
-            if os.path.exists(output_file) and not args.force:
-                resp = input(f"File {output_file} already exists. Overwrite? (y/N): ")
+            output_path = Path(output_file).expanduser()
+
+            # If the user passed a directory for markdown/html output, tuck the result inside it
+            if output_path.exists() and output_path.is_dir():
+                output_path = output_path / f"{base_name}.{ext}"
+                logger.info("Output path is a directory; writing to %s inside it.", output_path)
+
+            if output_path.exists() and output_path.is_dir():
+                logger.error(
+                    "Output path must be a file for markdown/html output. Got directory: %s",
+                    output_path,
+                )
+                sys.exit(1)
+
+            if output_path.exists() and not args.force:
+                resp = input(f"File {output_path} already exists. Overwrite? (y/N): ")
                 if resp.strip().lower() not in {"y", "yes"}:
                     logger.info("Operation cancelled.")
                     sys.exit(0)
 
             output_content = formatter.format_conversation(adapted)
 
-            logger.info("Writing output to: %s", output_file)
-            with open(output_file, "w", encoding="utf-8") as f:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            logger.info("Writing output to: %s", output_path)
+            with open(output_path, "w", encoding="utf-8") as f:
                 f.write(output_content)
 
             logger.info("Successfully processed conversation: '%s'", conversation.title)
-            logger.info("Output written to: %s", output_file)
+            logger.info("Output written to: %s", output_path)
         finally:
             DocumentContext.reset()
     except Exception as e:
