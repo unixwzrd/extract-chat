@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-03-18 — 1.2.0
+
+### Refactor
+
+- Reworked the transcript pipeline around a typed Pydantic render model.
+- Changed Markdown and HTML outputs to render assistant turns with per-turn `Tools Used` and `References` collapsible sections.
+- Attached internal/tool activity to the next visible assistant turn instead of emitting it as peer transcript content.
+
+### Schema Handling
+
+- Added schema diagnostics for unexpected OpenAI export shapes and content types.
+- Added automatic schema exception reports written next to output files when drift is detected.
+- Updated CLI warnings to guide users toward filing GitHub issues with redacted samples for unsupported schema variants.
+
+### Packaging
+
+- Aligned package metadata around the MIT license.
+- Added the `markdown` dependency for HTML rendering.
+- Updated README positioning for Markdown/HTML-first public release behavior.
+
 ## 2025-11-20 — 1.1.4
 
 ### Enhancements

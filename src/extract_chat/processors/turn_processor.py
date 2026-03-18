@@ -1,658 +1,407 @@
 #!/usr/bin/env python3
-"""
-Turn Processor V2 - Uses parent-child traversal for correct conversation flow.
-"""
+"""Turn processor that builds a typed render document."""
+
+from __future__ import annotations
+
 import logging
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 from extract_chat.context.document_context import DocumentContext
-from extract_chat.processors.reference_processing.citation_processor import (
-    CitationProcessor,
+from extract_chat.processors.reference_processing.citation_processor import CitationProcessor
+from extract_chat.schemas.render_models import (
+    MediaItem,
+    RenderDocument,
+    RenderTurn,
+    SystemContextEntry,
+    ToolActivityItem,
 )
 
 logger = logging.getLogger(__name__)
 
+_INTERNAL_CONTENT_TYPES = {
+    "model_editable_context",
+    "user_editable_context",
+    "thoughts",
+    "reasoning_recap",
+    "code",
+    "execution_output",
+    "tool_result",
+    "tool_output",
+    "system_error",
+    "tether_quote",
+    "tether_browsing_display",
+    "app_pairing_content",
+}
+
 
 class TurnProcessorV2:
-    """Processes conversations using parent-child traversal for correct flow."""
+    """Build visible transcript turns with assistant-attached tool activity."""
 
-    def __init__(self):
-        """Initialize the turn processor."""
-        self.processed_blocks = []
-        self.internal_dialogue_groups = {}  # Group internal turns by request_id
-        self.reference_turn_counter = 0  # Track turns with references
+    def __init__(self) -> None:
+        self.reference_turn_counter = 0
         self.global_reference_seq = 1
-        self.reference_seq_map: Dict[tuple, int] = {}
+        self.reference_seq_map: dict[tuple[Any, ...], int] = {}
 
-    def process_conversation(self, conversation: Any) -> List[Dict[str, Any]]:
-        """Process conversation using parent-child traversal."""
-        logger.info("Processing conversation with parent-child traversal...")
+    def process_conversation(self, conversation: Any) -> RenderDocument:
+        """Process the full conversation into a typed render document."""
 
-        # Find root turns (those with no parent or parent is None)
-        mapping = conversation.mapping
         dc = DocumentContext.get()
         if dc:
-            root_turns = dc.get_root_turn_ids()
+            ordered_turns = [(turn_id, turn, level) for turn_id, turn, level in dc.iter_preorder()]
         else:
-            root_turns = []
-            for turn_id, turn_data in mapping.items():
-                parent = getattr(turn_data, 'parent', None)
-                if parent is None:
-                    root_turns.append(turn_id)
+            ordered_turns = []
+            for turn_id, turn in getattr(conversation, "mapping", {}).items():
+                ordered_turns.append((turn_id, turn, 0))
 
-        logger.info(f"Found {len(root_turns)} root turns: {root_turns}")
+        document = RenderDocument(
+            title=getattr(conversation, "title", None),
+            conversation_id=getattr(conversation, "conversation_id", None),
+            create_time=getattr(conversation, "create_time", None),
+            update_time=getattr(conversation, "update_time", None),
+            default_model_slug=getattr(conversation, "default_model_slug", None),
+        )
 
-        # Process each root turn and its children
-        all_blocks = []
-        visited = set()
+        pending_tools: list[ToolActivityItem] = []
+        last_assistant_turn: RenderTurn | None = None
 
-        for root_id in root_turns:
-            blocks = self._traverse_turn(mapping, root_id, visited)
-            all_blocks.extend(blocks)
-
-        # Group internal dialogue with assistant responses
-        final_blocks = self._attach_internal_dialogue_to_assistant(all_blocks)
-
-        logger.info(f"Processed {len(final_blocks)} blocks total")
-        return final_blocks
-
-    def _traverse_turn(
-        self,
-        mapping: Dict[str, Any],
-        root_id: str,
-        visited: Set[str],
-    ) -> List[Dict[str, Any]]:
-        """Traverse a turn hierarchy iteratively to avoid recursion limits."""
-
-        if root_id in visited:
-            return []
-
-        blocks: List[Dict[str, Any]] = []
-        stack: List[Tuple[str, int]] = [(root_id, 0)]
-
-        while stack:
-            turn_id, level = stack.pop()
-
-            if turn_id in visited:
+        for turn_id, turn_data, _level in ordered_turns:
+            message = getattr(turn_data, "message", None)
+            if not message:
                 continue
 
-            visited.add(turn_id)
-            turn_data = mapping.get(turn_id)
-            if not turn_data:
+            classification = self._classify_message(message)
+            if classification == "conversation_context":
+                document.system_context.extend(self._build_context_entries(message, turn_id))
                 continue
 
-            turn_block = self._process_single_turn(turn_data, turn_id, level)
-            if turn_block:
-                blocks.append(turn_block)
+            if classification == "skip":
+                continue
 
-            children = getattr(turn_data, 'children', [])
-            for child_id in reversed(children):
-                if child_id not in visited:
-                    stack.append((child_id, level + 1))
+            if classification == "internal":
+                pending_tools.append(self._build_tool_activity(message, turn_id))
+                continue
 
-        return blocks
+            if classification == "assistant":
+                turn = self._build_visible_turn(message, turn_id, role="assistant", source_turn=turn_data)
+                if pending_tools:
+                    turn.tools_used.extend(sorted(pending_tools, key=self._tool_sort_key))
+                    pending_tools = []
+                document.turns.append(turn)
+                last_assistant_turn = turn
+                continue
 
-    def _process_single_turn(self, turn_data: Any, turn_id: str, level: int) -> Optional[Dict[str, Any]]:
-        """Process a single turn and determine its type."""
-        message = getattr(turn_data, 'message', None)
-        if not message:
-            # Turn with no message - structural turn, skip it
-            return None
+            if classification == "user":
+                document.turns.append(self._build_visible_turn(message, turn_id, role="user"))
+                continue
 
-        # Extract basic information
-        author = getattr(message, 'author', {})
-        role = getattr(author, 'role', 'unknown') if author else 'unknown'
-        content = getattr(message, 'content', {})
-        metadata = getattr(message, 'metadata', {})
+            if classification == "system":
+                turn = self._build_visible_turn(message, turn_id, role="system")
+                if turn.content.strip():
+                    document.turns.append(turn)
+                continue
 
-        # Note: We don't filter out turns based on is_visually_hidden_from_conversation
-        # as this is not a reliable indicator of whether a turn should appear in output
+        if pending_tools and last_assistant_turn is not None:
+            last_assistant_turn.tools_used.extend(sorted(pending_tools, key=self._tool_sort_key))
 
-        # Determine turn type based on content and metadata
-        turn_type = self._determine_turn_type(message, role, content, metadata)
+        return document
 
-        # Create appropriate block based on type
-        if turn_type == 'conversation_context':
-            return self._create_conversation_context_block(message, turn_id, level)
-        elif turn_type == 'user':
-            return self._create_user_block(message, turn_id, level)
-        elif turn_type == 'assistant':
-            return self._create_assistant_block(message, turn_id, level, turn_data)
-        elif turn_type == 'tool':
-            return self._create_tool_block(message, turn_id, level)
-        elif turn_type == 'system':
-            return self._create_system_block(message, turn_id, level)
-        elif turn_type == 'internal_dialogue':
-            return self._create_internal_dialogue_block(message, turn_id, level)
-        else:
-            return self._create_unknown_block(message, turn_id, level)
+    def _classify_message(self, message: Any) -> str:
+        role = getattr(getattr(message, "author", None), "role", "unknown")
+        metadata = self._metadata(message)
+        content = getattr(message, "content", None)
+        content_type = getattr(content, "content_type", None)
+        text = self._extract_text_content(content).strip()
 
-    def _determine_turn_type(self, message: Any, role: str, content: Any, metadata: Any) -> str:
-        """Determine the type of turn based on its characteristics."""
+        if metadata.get("is_user_system_message"):
+            return "conversation_context"
 
-        # Check for conversation context - use the most reliable indicator
-        is_user_system = getattr(metadata, 'is_user_system_message', False)
-        if is_user_system:
-            try:
-                if DocumentContext.get() and DocumentContext.get().is_verbose():
-                    logging.getLogger(__name__).debug("Found is_user_system_message for turn")
-            except Exception:
-                pass
-            return 'conversation_context'
+        if role == "tool":
+            return "internal"
 
-        # Debug: Check if metadata has the field but getattr is not working
-        if hasattr(metadata, '__getitem__'):
-            is_user_system_dict = metadata.get('is_user_system_message', False)
-            if is_user_system_dict:
-                try:
-                    if DocumentContext.get() and DocumentContext.get().is_verbose():
-                        logging.getLogger(__name__).debug("Found is_user_system_message via dict access")
-                except Exception:
-                    pass
-                return 'conversation_context'
+        if self._is_internal(message):
+            return "internal"
 
-        # Check for internal dialogue indicators
-        if self._is_internal_dialogue(message, role, content, metadata):
-            return 'internal_dialogue'
+        if role == "assistant":
+            return "assistant"
+        if role == "user":
+            return "user"
+        if role == "system":
+            return "system" if text else "skip"
+        return "skip"
 
-        # Determine by role - this should be the primary classifier
-        if role == 'user':
-            return 'user'
-        elif role == 'assistant':
-            return 'assistant'
-        elif role == 'tool':
-            return 'tool'
-        elif role == 'system':
-            return 'system'
-        else:
-            return 'unknown'
+    def _is_internal(self, message: Any) -> bool:
+        metadata = self._metadata(message)
+        content = getattr(message, "content", None)
+        content_type = getattr(content, "content_type", None)
+        role = getattr(getattr(message, "author", None), "role", "unknown")
 
-    def _is_internal_dialogue(self, message: Any, role: str, content: Any, metadata: Any) -> bool:
-        """Determine if a turn is internal dialogue that should be window-shaded."""
-        content_type = getattr(content, 'content_type', None)
-
-        # Internal dialogue content types
-        internal_content_types = [
-            'model_editable_context',
-            'thoughts',
-            'reasoning_recap',  # Added reasoning_recap
-            'code'  # Tool calls and internal code
-        ]
-
-        if content_type in internal_content_types:
+        if content_type in _INTERNAL_CONTENT_TYPES:
             return True
 
-        # Check for tool calls with specific patterns
-        if content_type == 'code':
-            text = getattr(content, 'text', '')
-            if text in ['search()', 'browse()'] or text.startswith('{"search_query"'):
-                return True
-
-        # Check for real_author indicating tool processing
-        author_metadata = getattr(getattr(message, 'author', {}), 'metadata', {})
-        real_author = author_metadata.get('real_author', '')
-        if real_author.startswith('tool:'):
+        author_meta = getattr(getattr(message, "author", None), "metadata", {}) or {}
+        real_author = ""
+        if isinstance(author_meta, dict):
+            real_author = str(author_meta.get("real_author") or "")
+        if real_author.startswith("tool:"):
             return True
 
-        # Check for user turns that are part of internal dialogue (have system_hints)
-        if role == 'user' and metadata:
-            # Try both getattr and direct access for system_hints
-            system_hints = getattr(metadata, 'system_hints', None)
-            if not system_hints and hasattr(metadata, '__getitem__'):
-                system_hints = metadata.get('system_hints', None)
-            if system_hints:
+        if metadata.get("system_hints"):
+            return True
+
+        model_slug = str(metadata.get("model_slug") or "")
+        if model_slug:
+            internal_prefixes = ("research", "browser", "analysis", "search", "tool")
+            internal_keywords = ("-browser", "-search", "-tool")
+            if any(model_slug.startswith(prefix) for prefix in internal_prefixes):
                 return True
+            if any(token in model_slug for token in internal_keywords):
+                return True
+
+        recipient = str(getattr(message, "recipient", "") or metadata.get("recipient") or "")
+        if recipient and recipient != "all" and "tool" in recipient.lower():
+            return True
+
+        if metadata.get("end_turn") is False and role != "user":
+            return True
 
         return False
 
-    def _group_internal_dialogue(self, blocks: List[Dict[str, Any]]) -> None:
-        """Group internal dialogue blocks by request_id."""
-        self.internal_dialogue_groups = {}
+    def _build_context_entries(self, message: Any, turn_id: str) -> list[SystemContextEntry]:
+        content = getattr(message, "content", None)
+        metadata = self._metadata(message)
+        timestamp = getattr(message, "create_time", None)
+        entries: list[SystemContextEntry] = []
 
-        for block in blocks:
-            if block.get('type') == 'internal_dialogue':
-                request_id = block.get('metadata', {}).get('request_id')
-                if request_id:
-                    if request_id not in self.internal_dialogue_groups:
-                        self.internal_dialogue_groups[request_id] = []
-                    self.internal_dialogue_groups[request_id].append(block)
+        for title, value in (
+            ("User Profile", getattr(content, "user_profile", None)),
+            ("User Instructions", getattr(content, "user_instructions", None)),
+        ):
+            text = str(value or "").strip()
+            if text:
+                entries.append(SystemContextEntry(title=title, content=text, turn_id=turn_id, timestamp=timestamp))
 
-    def _replace_with_grouped_internal_dialogue(self, blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Replace individual internal dialogue blocks with grouped blocks."""
-        final_blocks = []
-        processed_internal_ids = set()
+        user_context = metadata.get("user_context_message_data") or getattr(message, "user_context_message_data", None) or {}
+        if isinstance(user_context, dict):
+            for title, key in (("About The User", "about_user_message"), ("About The Model", "about_model_message")):
+                text = str(user_context.get(key) or "").strip()
+                if text:
+                    entries.append(SystemContextEntry(title=title, content=text, turn_id=turn_id, timestamp=timestamp))
 
-        for block in blocks:
-            if block.get('type') == 'internal_dialogue':
-                request_id = block.get('metadata', {}).get('request_id')
-                if request_id and request_id not in processed_internal_ids:
-                    # Create grouped internal dialogue block
-                    grouped_block = self._create_grouped_internal_dialogue_block(request_id)
-                    if grouped_block:
-                        final_blocks.append(grouped_block)
-                        processed_internal_ids.add(request_id)
-            else:
-                final_blocks.append(block)
+        return entries
 
-        return final_blocks
-
-    def _create_grouped_internal_dialogue_block(self, request_id: str) -> Optional[Dict[str, Any]]:
-        """Create a grouped internal dialogue block for a specific request_id."""
-        internal_blocks = self.internal_dialogue_groups.get(request_id, [])
-        if not internal_blocks:
-            return None
-
-        # Sort internal blocks by timestamp
-        internal_blocks.sort(key=lambda x: x.get('metadata', {}).get('timestamp', 0))
-
-        return {
-            'type': 'grouped_internal_dialogue',
-            'level': 0,
-            'content': {
-                'request_id': request_id,
-                'internal_blocks': internal_blocks
+    def _build_visible_turn(
+        self,
+        message: Any,
+        turn_id: str,
+        *,
+        role: str,
+        source_turn: Any | None = None,
+    ) -> RenderTurn:
+        content = getattr(message, "content", None)
+        metadata = self._metadata(message)
+        text = self._extract_text_content(content)
+        turn = RenderTurn(
+            role=role,
+            turn_id=turn_id,
+            timestamp=getattr(message, "create_time", None),
+            content=text,
+            metadata={
+                "message_id": getattr(message, "id", None),
+                "author": role,
+                "model_slug": metadata.get("model_slug"),
+                "recipient": getattr(message, "recipient", None),
+                "request_id": metadata.get("request_id"),
             },
-            'metadata': {
-                'request_id': request_id,
-                'block_count': len(internal_blocks),
-                'first_timestamp': internal_blocks[0].get('metadata', {}).get('timestamp') if internal_blocks else None,
-                'last_timestamp': internal_blocks[-1].get('metadata', {}).get('timestamp') if internal_blocks else None
-            }
-        }
+            media_items=self._extract_media_items(message, turn_id),
+        )
 
-    def _create_internal_dialogue_block(self, message: Any, turn_id: str, level: int) -> Dict[str, Any]:
-        """Create an internal dialogue block."""
-        content = getattr(message, 'content', {})
-        metadata = getattr(message, 'metadata', {})
-        author = getattr(message, 'author', {})
+        if role == "assistant" and source_turn is not None:
+            dc = DocumentContext.get()
+            has_references = dc.has_references_in_message(message) if dc else self._has_references(message)
+            turn.metadata["has_references"] = has_references
+            if has_references:
+                self.reference_turn_counter += 1
+                processor = CitationProcessor()
+                refs, next_seq = processor.get_references_data(
+                    turn=source_turn,
+                    ref_turn_counter=self.reference_turn_counter,
+                    start_seq=self.global_reference_seq,
+                    existing_sequences=self.reference_seq_map,
+                )
+                self.global_reference_seq = next_seq
+                turn.metadata["reference_turn_number"] = self.reference_turn_counter
+                turn.references_table = refs
 
-        content_type = getattr(content, 'content_type', 'unknown')
-        dc = DocumentContext.get()
-        text_content = dc.extract_text_from_content(content) if dc else self._extract_text_content(content)
+        return turn
 
-        return {
-            'type': 'internal_dialogue',
-            'level': level,
-            'content': {
-                'content_type': content_type,
-                'text': text_content,
-                'language': getattr(content, 'language', None),
-                'thoughts': getattr(content, 'thoughts', []),
-                'search_queries': metadata.get('search_queries', []),
-                'search_result_groups': metadata.get('search_result_groups', [])
+    def _build_tool_activity(self, message: Any, turn_id: str) -> ToolActivityItem:
+        metadata = self._metadata(message)
+        content = getattr(message, "content", None)
+        role = getattr(getattr(message, "author", None), "role", "unknown")
+        content_type = getattr(content, "content_type", None)
+        text = self._extract_text_content(content)
+
+        category = "internal"
+        title = "Internal Activity"
+        if role == "tool":
+            category = "tool_output"
+            title = self._tool_title(message, content_type)
+        elif content_type in {"thoughts", "reasoning_recap", "model_editable_context", "user_editable_context"}:
+            category = "reasoning"
+            title = "Hidden Assistant Activity"
+        elif role == "assistant":
+            category = "hidden_assistant"
+            title = "Hidden Assistant Activity"
+
+        return ToolActivityItem(
+            category=category,
+            title=title,
+            timestamp=getattr(message, "create_time", None),
+            turn_id=turn_id,
+            content_type=content_type,
+            language=getattr(content, "language", None),
+            content=text,
+            metadata={
+                "role": role,
+                "model_slug": metadata.get("model_slug"),
+                "recipient": getattr(message, "recipient", None),
+                "request_id": metadata.get("request_id"),
+                "status": getattr(message, "status", None),
+                "search_queries": metadata.get("search_queries", []),
+                "search_result_groups": metadata.get("search_result_groups", []),
+                "real_author": self._real_author(message),
             },
-            'metadata': {
-                'turn_id': turn_id,
-                'timestamp': getattr(message, 'create_time', None),
-                'message_id': getattr(message, 'id', None),
-                'request_id': metadata.get('request_id'),
-                'author_role': getattr(author, 'role', 'unknown'),
-                'real_author': getattr(author, 'metadata', {}).get('real_author'),
-                'model_slug': metadata.get('model_slug'),
-                'status': getattr(message, 'status', 'unknown')
-            }
+        )
+
+    def _tool_title(self, message: Any, content_type: str | None) -> str:
+        recipient = str(getattr(message, "recipient", "") or "").strip()
+        real_author = self._real_author(message)
+        content_titles = {
+            "system_error": "Tool Error",
+            "tether_quote": "Browser Quote",
+            "tether_browsing_display": "Browser Results",
+            "app_pairing_content": "Paired App Context",
+            "user_editable_context": "User Editable Context",
         }
+        if content_type in content_titles:
+            return content_titles[content_type]
+        if recipient:
+            return f"Tool Output: {recipient}"
+        if real_author.startswith("tool:"):
+            return f"Tool Output: {real_author[5:]}"
+        if content_type:
+            return f"Tool Output: {content_type}"
+        return "Tool Output"
 
-    def _create_conversation_context_block(self, message: Any, turn_id: str, level: int) -> Dict[str, Any]:
-        """Create a conversation context block."""
-        content = getattr(message, 'content', {})
-        metadata = getattr(message, 'metadata', {})
+    def _real_author(self, message: Any) -> str:
+        author_meta = getattr(getattr(message, "author", None), "metadata", {}) or {}
+        if isinstance(author_meta, dict):
+            return str(author_meta.get("real_author") or "")
+        return ""
 
-        # Extract context information from content
-        user_profile = getattr(content, 'user_profile', None)
-        user_instructions = getattr(content, 'user_instructions', None)
+    def _metadata(self, message: Any) -> dict[str, Any]:
+        metadata = getattr(message, "metadata", None)
+        if isinstance(metadata, dict):
+            return metadata
+        return {}
 
-        # Extract context information from metadata - user_context_message_data is a Dict[str, Any]
-        user_context_data = metadata.get('user_context_message_data', {}) if metadata else {}
+    def _tool_sort_key(self, item: ToolActivityItem) -> tuple[float, str]:
+        return (item.timestamp or 0.0, item.turn_id or "")
 
-        # Also check if user_context_message_data is a separate field on the message
-        user_context_data_separate = getattr(message, 'user_context_message_data', None)
+    def _extract_media_items(self, message: Any, turn_id: str) -> list[MediaItem]:
+        content = getattr(message, "content", None)
+        payloads: list[Any] = []
+        if content is not None and hasattr(content, "model_dump"):
+            payloads.append(content.model_dump())
+        metadata = getattr(message, "metadata", None)
+        if isinstance(metadata, dict):
+            payloads.append(metadata)
+        parts = getattr(content, "parts", None)
+        if isinstance(parts, list):
+            payloads.append(parts)
 
-        # Use the separate field since that's where the data actually is
-        user_context_data = user_context_data_separate or user_context_data
+        items: list[MediaItem] = []
+        seen: set[tuple[str, str]] = set()
+        for payload in payloads:
+            for candidate in self._iter_media_candidates(payload):
+                for kind, value in candidate.items():
+                    label = self._media_label(kind, value)
+                    key = (kind, label)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    items.append(
+                        MediaItem(
+                            kind=kind,
+                            label=label,
+                            url=value if isinstance(value, str) and (value.startswith("http://") or value.startswith("https://")) else None,
+                            turn_id=turn_id,
+                            message_id=getattr(message, "id", None),
+                            metadata={"value": value},
+                        )
+                    )
+        return items
 
-        about_user = user_context_data.get('about_user_message') if user_context_data else None
-        about_model = user_context_data.get('about_model_message') if user_context_data else None
-
-        return {
-            'type': 'conversation_context',
-            'level': level,
-            'content': {
-                'user_profile': user_profile,
-                'user_instructions': user_instructions
-            },
-            'metadata': {
-                'turn_id': turn_id,
-                'timestamp': getattr(message, 'create_time', None),
-                'message_id': getattr(message, 'id', None),
-                'about_user': about_user,
-                'about_model': about_model
-            }
-        }
-
-    def _create_user_block(self, message: Any, turn_id: str, level: int) -> Dict[str, Any]:
-        """Create a user message block."""
-        content = getattr(message, 'content', {})
-        text_content = self._extract_text_content(content)
-
-        return {
-            'type': 'user',
-            'level': level,
-            'content': text_content,
-            'metadata': {
-                'turn_id': turn_id,
-                'timestamp': getattr(message, 'create_time', None),
-                'message_id': getattr(message, 'id', None),
-                'author': getattr(getattr(message, 'author', {}), 'role', 'user')
-            }
-        }
-
-    def _create_assistant_block(self, message: Any, turn_id: str, level: int, turn_data: Any = None) -> Dict[str, Any]:
-        """Create an assistant message block."""
-        content = getattr(message, 'content', {})
-        metadata = getattr(message, 'metadata', {})
-        text_content = self._extract_text_content(content)
-
-        # Check if this turn has references
-        dc = DocumentContext.get()
-        has_references = dc.has_references_in_message(message) if dc else self._has_references(message)
-        if has_references:
-            self.reference_turn_counter += 1
-
-        block = {
-            'type': 'assistant',
-            'level': level,
-            'content': text_content,
-            'metadata': {
-                'turn_id': turn_id,
-                'timestamp': getattr(message, 'create_time', None),
-                'message_id': getattr(message, 'id', None),
-                'author': getattr(getattr(message, 'author', {}), 'role', 'assistant'),
-                'model_slug': metadata.get('model_slug'),
-                'recipient': getattr(message, 'recipient', None),
-                'end_turn': metadata.get('end_turn'),
-                'request_id': metadata.get('request_id'),
-                'has_references': has_references,
-                'reference_turn_number': self.reference_turn_counter if has_references else None
-            }
-        }
-
-        # If this turn has references, process them and add the references table
-        if has_references:
-            citation_processor = CitationProcessor()
-            reference_block, next_seq = citation_processor.get_references_data(
-                turn=turn_data,
-                ref_turn_counter=self.reference_turn_counter,
-                start_seq=self.global_reference_seq,
-                existing_sequences=self.reference_seq_map,
+    def _iter_media_candidates(self, value: Any) -> list[dict[str, Any]]:
+        candidates: list[dict[str, Any]] = []
+        if isinstance(value, dict):
+            media_keys = (
+                "url",
+                "content_url",
+                "thumbnail_url",
+                "image_url",
+                "image_urls",
+                "download_url",
+                "asset_pointer",
+                "file_id",
+                "audio_asset_pointer",
             )
-            self.global_reference_seq = next_seq
-            block['references_table'] = reference_block
+            matched = {key: value.get(key) for key in media_keys if key in value and value.get(key)}
+            if matched:
+                candidates.append(matched)
+            for child in value.values():
+                candidates.extend(self._iter_media_candidates(child))
+        elif isinstance(value, list):
+            for item in value:
+                candidates.extend(self._iter_media_candidates(item))
+        return candidates
 
-        return block
-
-    def _create_tool_block(self, message: Any, turn_id: str, level: int) -> Dict[str, Any]:
-        """Create a tool message block."""
-        content = getattr(message, 'content', {})
-        dc = DocumentContext.get()
-        text_content = dc.extract_text_from_content(content) if dc else self._extract_text_content(content)
-
-        return {
-            'type': 'tool',
-            'level': level,
-            'content': text_content,
-            'metadata': {
-                'turn_id': turn_id,
-                'timestamp': getattr(message, 'create_time', None),
-                'message_id': getattr(message, 'id', None),
-                'author': getattr(getattr(message, 'author', {}), 'role', 'tool')
-            }
-        }
-
-    def _create_system_block(self, message: Any, turn_id: str, level: int) -> Dict[str, Any]:
-        """Create a system message block."""
-        content = getattr(message, 'content', {})
-        dc = DocumentContext.get()
-        text_content = dc.extract_text_from_content(content) if dc else self._extract_text_content(content)
-
-        return {
-            'type': 'system',
-            'level': level,
-            'content': text_content,
-            'metadata': {
-                'turn_id': turn_id,
-                'timestamp': getattr(message, 'create_time', None),
-                'message_id': getattr(message, 'id', None),
-                'author': getattr(getattr(message, 'author', {}), 'role', 'system')
-            }
-        }
-
-    def _create_structural_block(self, turn_data: Any, turn_id: str, level: int) -> Dict[str, Any]:
-        """Create a block for structural turns (no message)."""
-        return {
-            'type': 'structural',
-            'level': level,
-            'content': None,
-            'metadata': {
-                'turn_id': turn_id,
-                'parent': getattr(turn_data, 'parent', None),
-                'children': getattr(turn_data, 'children', [])
-            }
-        }
-
-    def _create_unknown_block(self, message: Any, turn_id: str, level: int) -> Dict[str, Any]:
-        """Create a block for unknown message types."""
-        content = getattr(message, 'content', {})
-        dc = DocumentContext.get()
-        text_content = dc.extract_text_from_content(content) if dc else self._extract_text_content(content)
-
-        return {
-            'type': 'unknown',
-            'level': level,
-            'content': text_content,
-            'metadata': {
-                'turn_id': turn_id,
-                'timestamp': getattr(message, 'create_time', None),
-                'message_id': getattr(message, 'id', None),
-                'author': getattr(getattr(message, 'author', {}), 'role', 'unknown')
-            }
-        }
+    def _media_label(self, kind: str, value: Any) -> str:
+        if isinstance(value, list):
+            return ", ".join(str(item) for item in value[:3])
+        return str(value)
 
     def _extract_text_content(self, content: Any) -> str:
-        """Extract text content from message content."""
+        dc = DocumentContext.get()
+        if dc:
+            return dc.extract_text_from_content(content)
         if not content:
             return ""
-
-        # Try different content fields
-        text = getattr(content, 'text', None)
+        text = getattr(content, "text", None)
         if text:
             return str(text)
-
-        parts = getattr(content, 'parts', None)
-        if parts:
-            # Join parts if they're strings
-            if isinstance(parts, list):
-                text_parts = [str(part) for part in parts if part]
-                return "\n".join(text_parts)
-
-        # Try other content fields
-        for field in ['thoughts', 'model_set_context', 'repository', 'repo_summary']:
+        parts = getattr(content, "parts", None)
+        if isinstance(parts, list):
+            rendered_parts: list[str] = []
+            for part in parts:
+                if isinstance(part, str):
+                    if part:
+                        rendered_parts.append(part)
+                    continue
+                if isinstance(part, dict):
+                    text_value = part.get("text")
+                    if text_value:
+                        rendered_parts.append(str(text_value))
+            return "\n".join(rendered_parts)
+        for field in ("thoughts", "model_set_context", "repository", "repo_summary", "result", "summary", "content"):
             value = getattr(content, field, None)
             if value:
                 return str(value)
-
         return ""
 
     def _has_references(self, message: Any) -> bool:
-        """Check if a turn has references: by metadata arrays OR inline markers in text."""
-        if not message:
-            return False
-        # Metadata-based detection
-        metadata = getattr(message, 'metadata', None)
-        if metadata:
-            try:
-                citations = metadata.get('citations', [])
-                if citations:
-                    return True
-            except Exception:
-                pass
-            try:
-                content_refs = metadata.get('content_references', [])
-                if content_refs:
-                    return True
-            except Exception:
-                pass
-        # Fallback: text-based detection
-        try:
-            content = getattr(message, 'content', None)
-            text = ''
-            if hasattr(content, 'text') and content.text:
-                text = str(content.text)
-            elif hasattr(content, 'parts') and isinstance(content.parts, list):
-                text = "\n".join(str(p) for p in content.parts if p)
-            elif isinstance(content, str):
-                text = content
-            if text:
-                import re as _re
-                if _re.search(r'【\d+†L\d+-L\d+】', text):
-                    return True
-        except Exception:
-            pass
-        return False
-
-    def _attach_internal_dialogue_to_assistant(self, blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Process blocks in sequence, maintaining state between internal dialogue and visible conversation."""
-        final_blocks = []
-        current_internal_dialogue = []
-        in_internal_mode = False
-
-        for block in blocks:
-            # Determine if this block is visible (external dialogue) or internal
-            is_visible = self._is_visible_turn(block)
-
-            if not is_visible:
-                # This is internal dialogue - add to current internal dialogue group
-                if not in_internal_mode:
-                    # Starting internal dialogue mode
-                    in_internal_mode = True
-                    current_internal_dialogue = []
-
-                # Convert any non-internal_dialogue blocks to internal_dialogue format
-                if block.get('type') != 'internal_dialogue':
-                    internal_block = self._convert_to_internal_dialogue(block)
-                    current_internal_dialogue.append(internal_block)
-                else:
-                    # Already in internal_dialogue format
-                    current_internal_dialogue.append(block)
-
-            elif is_visible and in_internal_mode:
-                # We're transitioning from internal dialogue to visible conversation
-                # Attach the accumulated internal dialogue to this visible block
-                if current_internal_dialogue:
-                    block['internal_dialogue'] = current_internal_dialogue
-                    current_internal_dialogue = []
-                in_internal_mode = False
-                final_blocks.append(block)
-
-            elif is_visible:
-                # We're in visible conversation mode
-                final_blocks.append(block)
-
-            else:
-                # Unknown block type, treat as visible
-                final_blocks.append(block)
-
-        # If we end in internal dialogue mode, add the remaining internal dialogue as a separate block
-        if in_internal_mode and current_internal_dialogue:
-            final_blocks.extend(current_internal_dialogue)
-
-        return final_blocks
-
-    def _is_visible_turn(self, block: Dict[str, Any]) -> bool:
-        """Determine if a turn is visible (external dialogue) or internal."""
-        block_type = block.get('type')
-        metadata = block.get('metadata', {})
-
-        # Special case: conversation_context blocks are always visible
-        if block_type == 'conversation_context':
+        metadata = self._metadata(message)
+        if metadata.get("citations") or metadata.get("content_references"):
             return True
-
-        # Check for system_hints - this indicates internal communication
-        if metadata.get('system_hints'):
-            return False
-
-        # Check for real_author starting with 'tool:' - this is internal tool communication
-        real_author = metadata.get('real_author', '')
-        if real_author and real_author.startswith('tool:'):
-            return False
-
-        # model_slug: treat research/debug helper models as internal, allow normal chat models
-        model_slug = metadata.get('model_slug', '')
-        if model_slug:
-            internal_prefixes = (
-                'research',
-                'browser',
-                'analysis',
-                'search',
-                'tool',
-            )
-            internal_keywords = ('-browser', '-search', '-tool')
-            if any(model_slug.startswith(prefix) for prefix in internal_prefixes) or any(
-                kw in model_slug for kw in internal_keywords
-            ):
-                return False
-
-        # Check for specific recipient indicating internal tool communication
-        recipient = metadata.get('recipient', '')
-        if recipient and recipient != 'all' and 'tool' in recipient.lower():
-            return False
-
-        # Check for end_turn being false (internal turns often don't end the conversation)
-        end_turn = metadata.get('end_turn')
-        if end_turn is False:
-            return False
-
-        # Check content types that indicate internal processing
-        content = block.get('content', {})
-        if isinstance(content, dict):
-            content_type = content.get('content_type', '')
-            if content_type in ['model_editable_context', 'thoughts', 'reasoning_recap', 'code']:
-                return False
-
-        # Check for specific internal dialogue types
-        if block_type == 'internal_dialogue':
-            return False
-
-        # For tool blocks, check if they're part of internal processing
-        if block_type == 'tool':
-            # Tool blocks with empty content or specific metadata are internal
-            if not content or content == "":
-                return False
-            # Tool blocks with async_task metadata are internal
-            if metadata.get('async_task_type') or metadata.get('async_task_id'):
-                return False
-
-        # Default to visible for user, assistant, system blocks
-        # unless they have other indicators of being internal
-        return True
-
-    def _convert_to_internal_dialogue(self, block: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert a block to internal_dialogue format."""
-        return {
-            'type': 'internal_dialogue',
-            'level': block.get('level', 0),
-            'content': {
-                'content_type': 'text',
-                'text': block.get('content', '')
-            },
-            'metadata': {
-                'turn_id': block.get('metadata', {}).get('turn_id'),
-                'timestamp': block.get('metadata', {}).get('timestamp'),
-                'message_id': block.get('metadata', {}).get('message_id'),
-                'request_id': block.get('metadata', {}).get('request_id'),
-                'author_role': block.get('metadata', {}).get('author_role', 'unknown'),
-                'real_author': block.get('metadata', {}).get('real_author'),
-                'model_slug': block.get('metadata', {}).get('model_slug'),
-                'status': block.get('metadata', {}).get('status', 'finished_successfully')
-            }
-        }
+        text = self._extract_text_content(getattr(message, "content", None))
+        return "†L" in text and "【" in text

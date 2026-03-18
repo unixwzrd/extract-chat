@@ -125,6 +125,14 @@ class JekyllTurnExporter:
                 )
             )
 
+        if sources_block and section_pages:
+            last_page = section_pages[-1]
+            preserved_sources = self._clean_text_for_jekyll(sources_block.strip())
+            if preserved_sources:
+                last_page.content = f"{last_page.content.rstrip()}\n\n{preserved_sources}\n"
+                for uid in _find_occurrence_ids(preserved_sources):
+                    occurrence_links[uid] = last_page.slug
+
         references_page, reference_groups = self._build_references_page(
             references_table.get("references", []),
             occurrence_links,
@@ -209,7 +217,7 @@ class JekyllTurnExporter:
                 if not label:
                     continue
                 backlinks.append(
-                    f"[{label}^]({self.base_slug}-{slug}.md#ref-source-{uid})"
+                    f"[{label}^]({self.base_slug}-{slug}.html#ref-source-{uid})"
                 )
 
             entry_parts: List[str] = []
@@ -268,7 +276,7 @@ def _rewrite_reference_links(text: str, *, base_slug: str) -> str:
     refs_url = f"{base_slug}-references"
     return re.sub(
         r'href="#(ref-target-[^"]+)"',
-        lambda m: f'href="{refs_url}.md#{m.group(1)}"',
+        lambda m: f'href="{refs_url}.html#{m.group(1)}"',
         text,
     )
 

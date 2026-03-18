@@ -4,20 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "extract-chat"
-version = "1.1.4"
-description = "Extract ChatGPT conversations from exported JSON to Markdown/HTML with citations."
+version = "1.2.0"
+description = "Convert OpenAI and ChatGPT conversation JSON exports into readable Markdown or HTML logs with citations."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "Proprietary"}
-authors = [{ name = "extract-chat maintainers" }]
+license = {text = "MIT"}
+authors = [{ name = "unixwzrd" }]
 dependencies = [
   "pydantic>=2",
   "ftfy>=6.2",
+  "markdown>=3.6",
   "unicodefix @ git+https://github.com/unixwzrd/UnicodeFix.git",
 ]
 
 [project.scripts]
 extract-chat = "extract_chat.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/unixwzrd/extract-chat"
+Issues = "https://github.com/unixwzrd/extract-chat/issues"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

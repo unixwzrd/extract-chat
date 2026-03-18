@@ -41,6 +41,14 @@ from extract_chat.schemas.metadata import (  # Plugin and tool structures; Searc
     SonicClassificationResult,
     UserContextMessageData,
 )
+from extract_chat.schemas.render_models import (
+    RenderDocument,
+    RenderTurn,
+    SchemaDiagnostics,
+    SchemaWarning,
+    SystemContextEntry,
+    ToolActivityItem,
+)
 
 __all__ = [
     # Base conversation models
@@ -49,6 +57,12 @@ __all__ = [
     'Message',
     'Turn',
     'Conversation',
+    'RenderDocument',
+    'RenderTurn',
+    'ToolActivityItem',
+    'SystemContextEntry',
+    'SchemaWarning',
+    'SchemaDiagnostics',
 
     # Metadata models
     'JitPluginData',
