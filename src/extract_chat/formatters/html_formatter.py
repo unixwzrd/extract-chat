@@ -169,7 +169,17 @@ class HTMLFormatter(BaseFormatter):
         for item in media_items:
             label = escape(item.label)
             kind = escape(item.kind)
-            if item.url:
+            local_path = item.metadata.get("local_path")
+            original_url = item.metadata.get("original_url")
+            canonical_id = item.metadata.get("canonical_id")
+            if item.url and local_path:
+                body = f'<strong>{kind}</strong>: <a href="{escape(item.url)}">{label}</a>'
+                if canonical_id:
+                    body = f'{body} <code>{escape(str(canonical_id))}</code>'
+                if original_url:
+                    body = f'{body} <span class="muted">remote:</span> <code>{escape(str(original_url))}</code>'
+                parts.append(f"<li>{body}</li>")
+            elif item.url:
                 parts.append(f'<li><strong>{kind}</strong>: <a href="{escape(item.url)}">{label}</a></li>')
             else:
                 parts.append(f"<li><strong>{kind}</strong>: <code>{label}</code></li>")

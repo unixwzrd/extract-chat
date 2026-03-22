@@ -285,6 +285,79 @@ def test_cli_writes_media_inventory_when_requested(tmp_path: Path) -> None:
     assert "https://example.com/image.png" in rendered
 
 
+def test_cli_prefers_local_media_bundle_links_when_present(tmp_path: Path) -> None:
+    payload = {
+        "title": "Media Bundle",
+        "mapping": {
+            "root": {"id": "root", "children": ["user-1"]},
+            "user-1": {
+                "id": "user-1",
+                "parent": "root",
+                "children": [],
+                "message": {
+                    "id": "user-1",
+                    "author": {"role": "user", "metadata": {}},
+                    "recipient": "all",
+                    "metadata": {
+                        "attachments": [
+                            {
+                                "id": "file_abc123",
+                                "name": "test-image.png",
+                            }
+                        ]
+                    },
+                    "content": {
+                        "content_type": "multimodal_text",
+                        "parts": [
+                            {
+                                "asset_pointer": "file-service://file_abc123",
+                                "url": "https://chatgpt.com/backend-api/estuary/content?id=file_abc123&sig=xyz",
+                            }
+                        ],
+                    },
+                },
+            },
+        },
+    }
+    input_path = tmp_path / "bundle.json"
+    input_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    bundle_dir = tmp_path / "bundle"
+    media_dir = bundle_dir / "media"
+    media_dir.mkdir(parents=True)
+    local_media = media_dir / "file_abc123.png"
+    local_media.write_bytes(b"png-bytes")
+    manifest = {
+        "items": [
+            {
+                "canonical_id": "file_abc123",
+                "saved_filename": "file_abc123.png",
+                "relative_path": "media/file_abc123.png",
+                "original_filename": "uploaded-image.png",
+                "source_url": "https://chatgpt.com/backend-api/estuary/content?id=file_abc123&sig=xyz",
+            }
+        ]
+    }
+    (bundle_dir / "media-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    output_path = tmp_path / "rendered" / "bundle.md"
+    args = [
+        "extract-chat",
+        str(input_path),
+        "--format",
+        "markdown",
+        "--output",
+        str(output_path),
+        "--force",
+    ]
+    run_cli(args)
+
+    rendered = output_path.read_text(encoding="utf-8")
+    assert "- Local: [uploaded-image.png](../bundle/media/file_abc123.png)" in rendered
+    assert "- File ID: `file_abc123`" in rendered
+    assert "- Remote: `https://chatgpt.com/backend-api/estuary/content?id=file_abc123&sig=xyz`" in rendered
+
+
 def test_maybe_file_schema_issue_skips_duplicate(monkeypatch) -> None:
     diagnostics = SchemaDiagnostics(
         warnings=[

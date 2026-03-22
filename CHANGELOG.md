@@ -1,24 +1,32 @@
 # Changelog
 
-## 2026-03-18 — 1.2.0
+## 2026-03-22 — 0.7.0
 
 ### Refactor
 
 - Reworked the transcript pipeline around a typed Pydantic render model.
 - Changed Markdown and HTML outputs to render assistant turns with per-turn `Tools Used` and `References` collapsible sections.
 - Attached internal/tool activity to the next visible assistant turn instead of emitting it as peer transcript content.
+- Added local media bundle awareness so rendered transcripts can prefer files from `<stem>/media/` when a sibling media manifest is present.
 
 ### Schema Handling
 
 - Added schema diagnostics for unexpected OpenAI export shapes and content types.
 - Added automatic schema exception reports written next to output files when drift is detected.
 - Updated CLI warnings to guide users toward filing GitHub issues with redacted samples for unsupported schema variants.
+- Added optional duplicate-safe GitHub issue filing via `gh` for schema drift reports.
 
 ### Packaging
 
 - Aligned package metadata around the MIT license.
 - Added the `markdown` dependency for HTML rendering.
 - Updated README positioning for Markdown/HTML-first public release behavior.
+- Made `pyproject.toml` the authoritative packaging source while keeping `setup.py` as a minimal compatibility shim.
+
+### Documentation
+
+- Updated README coverage for schema issue filing, local media bundle consumption, and current known gaps.
+- Added `docs/media-bundle-contract.md` to document the shared `LogGPT Plus` and `extract-chat` media layout.
 
 ## 2025-11-20 — 1.1.4
 

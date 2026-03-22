@@ -206,7 +206,16 @@ class MarkdownFormatter(BaseFormatter):
         lines = ["<details>", "<summary>Media</summary>", ""]
         for item in media_items:
             lines.append(f"**{item.kind}**")
-            if item.url:
+            local_path = item.metadata.get("local_path")
+            original_url = item.metadata.get("original_url")
+            canonical_id = item.metadata.get("canonical_id")
+            if item.url and local_path:
+                lines.append(f"- Local: [{item.label}]({item.url})")
+                if canonical_id:
+                    lines.append(f"- File ID: `{canonical_id}`")
+                if original_url:
+                    lines.append(f"- Remote: `{original_url}`")
+            elif item.url:
                 lines.append(f"- Link: [{item.label}]({item.url})")
             else:
                 lines.append(f"- Value: `{item.label}`")

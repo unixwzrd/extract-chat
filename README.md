@@ -79,6 +79,8 @@ Common options:
 - `--force`: overwrite existing files
 - `--schema-warning-detail`: `summary` (default) or `full`
 - `--media-index`: write a media inventory JSON file under a conversation-named subdirectory next to the output
+- `--gh-file-schema-issue`: use `gh` to file schema-drift issues automatically with duplicate detection
+- `--gh-repo`: override the GitHub repo used for automatic schema issue filing
 - `-V, --version`: show the installed version
 
 Batch options:
@@ -122,9 +124,28 @@ When warnings are raised, the tool also writes a `*-schema-issue.md` issue bundl
 
 By default, schema warnings are summarized on stderr. Use `--schema-warning-detail full` if you want every warning entry printed to the terminal.
 
+If you have the GitHub CLI installed and authenticated, you can opt into automatic issue filing:
+
+```bash
+extract-chat path/to/conversation.json \
+  -o out.md \
+  --gh-file-schema-issue
+```
+
+Duplicate suppression is signature-based, so the tool checks open issues first and skips creating a new issue when a matching schema signature already exists.
+
 ## Media Inventory
 
 Use `--media-index` to generate a `media-index.json` file under a subdirectory named after the conversation stem. This does not download remote media; it inventories known media pointers, URLs, asset ids, and related attachment fields so a later pass can fetch them or link them into Markdown/HTML.
+
+If a sibling extracted media bundle exists using the shared `LogGPT Plus` contract:
+
+- `<stem>/media/`
+- optional `<stem>/media-manifest.json`
+
+then `extract-chat` will prefer local media links in the rendered `Media` section for each turn while preserving the original remote pointer metadata.
+
+The bundle contract is documented in [`docs/media-bundle-contract.md`](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/media-bundle-contract.md).
 
 ## Batch Validation Reports
 
@@ -146,7 +167,7 @@ This is intended for validating mixed-era archives without writing back into the
 
 ## Citation Behavior
 
-- Inline markers such as `` are replaced with superscript links in assistant text.
+- Inline OpenAI export citation markers are replaced with superscript links in assistant text.
 - Each assistant turn renders its own `References` section.
 - References include backlinks to the citation site within that same assistant turn.
 - Assistant-authored `**Sources:**` blocks are stripped from the primary Markdown and HTML transcript outputs so the canonical references come only from processed metadata.
@@ -166,11 +187,18 @@ Primary Markdown and HTML outputs follow this structure:
 
 This keeps the transcript readable while preserving provenance and research metadata.
 
+## Known Gaps
+
+- Authenticated media downloading still belongs to `LogGPT Plus`, not `extract-chat`.
+- ZIP auto-extract for `<stem>.media.zip` is not implemented yet; `extract-chat` currently consumes the extracted `<stem>/media/` layout.
+- Chunking/vector export is still planned, not implemented.
+- The test suite still emits Pydantic v2 deprecation warnings from older schema modules that have not been migrated to `ConfigDict` yet.
+
 ## Project Notes
 
 - `tmp/unified-output/` and `tmp/jekyll-pages-fix10/` contain reference outputs used as behavior guides, especially for citation integrity.
 - Jekyll remains supported, but Markdown and HTML are the primary public outputs.
-- JavaScript integration and referenced-media downloading are future work, not part of the current release.
+- `LogGPT` / `LogGPT Plus` integration now uses a shared naming contract for JSON and optional media bundles.
 
 ## Development
 

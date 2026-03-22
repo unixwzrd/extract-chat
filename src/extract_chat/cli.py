@@ -19,6 +19,7 @@ from hashlib import sha1
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
+from urllib.parse import urlparse, parse_qs
 
 from pydantic import ValidationError
 
@@ -43,6 +44,7 @@ _SLUG_CLEAN_RE = re.compile(r"[^a-z0-9]+")
 _GITHUB_ISSUES_URL = "https://github.com/unixwzrd/extract-chat/issues"
 _GITHUB_NEW_ISSUE_URL = f"{_GITHUB_ISSUES_URL}/new"
 _DEFAULT_GH_REPO = "unixwzrd/extract-chat"
+_FILE_SERVICE_PREFIX = "file-service://"
 
 
 @dataclass
@@ -58,6 +60,146 @@ class ExportResult:
     failure_message: str | None = None
     media_inventory_path: Path | None = None
     elapsed_seconds: float = 0.0
+
+
+def _normalize_media_identifier(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        for item in value:
+            normalized = _normalize_media_identifier(item)
+            if normalized:
+                return normalized
+        return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.startswith(_FILE_SERVICE_PREFIX):
+        return text[len(_FILE_SERVICE_PREFIX):]
+    if text.startswith("http://") or text.startswith("https://"):
+        parsed = urlparse(text)
+        query_id = parse_qs(parsed.query).get("id", [None])[0]
+        if query_id:
+            return str(query_id)
+    if text.startswith("file-") or text.startswith("file_"):
+        return text
+    return None
+
+
+def _iter_media_identifiers(media_item: Any) -> list[str]:
+    candidates: list[str] = []
+    for value in (
+        getattr(media_item, "label", None),
+        getattr(media_item, "url", None),
+        (getattr(media_item, "metadata", {}) or {}).get("value"),
+        (getattr(media_item, "metadata", {}) or {}).get("canonical_id"),
+        (getattr(media_item, "metadata", {}) or {}).get("asset_pointer"),
+        (getattr(media_item, "metadata", {}) or {}).get("file_id"),
+    ):
+        normalized = _normalize_media_identifier(value)
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+    return candidates
+
+
+def _load_media_manifest_entries(input_path: Path) -> dict[str, dict[str, Any]]:
+    base_dir = input_path.parent / input_path.stem
+    media_dir = base_dir / "media"
+    manifest_paths = [
+        base_dir / "media-manifest.json",
+        media_dir / "media-manifest.json",
+    ]
+    entries: dict[str, dict[str, Any]] = {}
+
+    for manifest_path in manifest_paths:
+        if not manifest_path.exists():
+            continue
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            logger.warning("Ignoring unreadable media manifest: %s", manifest_path)
+            continue
+
+        items = payload.get("items", []) if isinstance(payload, dict) else []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            identifiers = [
+                _normalize_media_identifier(item.get("canonical_id")),
+                _normalize_media_identifier(item.get("file_id")),
+                _normalize_media_identifier(item.get("asset_pointer")),
+                _normalize_media_identifier(item.get("source_url")),
+                _normalize_media_identifier(item.get("original_url")),
+            ]
+            relative_path = item.get("relative_path") or item.get("saved_path")
+            if not relative_path:
+                saved_filename = item.get("saved_filename") or item.get("filename")
+                if saved_filename:
+                    relative_path = f"media/{saved_filename}"
+            if not relative_path:
+                continue
+            absolute_path = base_dir / str(relative_path)
+            if not absolute_path.exists():
+                continue
+            for identifier in identifiers:
+                if not identifier:
+                    continue
+                entries[identifier] = {
+                    "canonical_id": identifier,
+                    "absolute_path": absolute_path,
+                    "relative_path": str(relative_path),
+                    "display_name": item.get("original_filename") or item.get("saved_filename") or absolute_path.name,
+                    "original_url": item.get("source_url") or item.get("original_url"),
+                }
+
+    if media_dir.exists():
+        for media_file in media_dir.iterdir():
+            if not media_file.is_file():
+                continue
+            identifier = _normalize_media_identifier(media_file.stem)
+            if not identifier:
+                identifier = media_file.stem
+            entries.setdefault(
+                identifier,
+                {
+                    "canonical_id": identifier,
+                    "absolute_path": media_file,
+                    "relative_path": str(Path("media") / media_file.name),
+                    "display_name": media_file.name,
+                    "original_url": None,
+                },
+            )
+
+    return entries
+
+
+def _attach_local_media_links(
+    *,
+    document: RenderDocument,
+    input_path: Path,
+    output_path: Path | None,
+) -> None:
+    manifest_entries = _load_media_manifest_entries(input_path)
+    if not manifest_entries:
+        return
+
+    output_parent = output_path.parent if output_path is not None else input_path.parent
+    for turn in document.turns:
+        for item in turn.media_items:
+            for identifier in _iter_media_identifiers(item):
+                match = manifest_entries.get(identifier)
+                if not match:
+                    continue
+                relative_link = os.path.relpath(match["absolute_path"], output_parent)
+                if item.url:
+                    item.metadata["original_url"] = item.url
+                item.metadata["canonical_id"] = match["canonical_id"]
+                item.metadata["local_path"] = relative_link
+                item.metadata["display_name"] = match["display_name"]
+                item.url = relative_link
+                item.label = match["display_name"]
+                break
 
 
 def _slugify(value: str | None) -> str:
@@ -534,6 +676,7 @@ def export_file(
 
             formatter = HTMLFormatter({"css_file": css_file, "verbose": verbose}) if format_name == "html" else MarkdownFormatter({"verbose": verbose})
             output_path = _resolve_single_output_path(input_file, output, format_name)
+            _attach_local_media_links(document=document, input_path=input_path, output_path=output_path)
 
             if output_path.exists() and output_path.is_dir():
                 raise RuntimeError(f"Output path must be a file for markdown/html output. Got directory: {output_path}")
