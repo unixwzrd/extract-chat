@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-03-27 - 0.5.7 - Initial Public Release
+## 2026-03-27 - 0.5.8 - Initial Public Release
 
 ### Tests
 
@@ -16,7 +16,7 @@
 
 - Set the package version to `0.5.7` for the initial public release complementary to the `LogGPT` macOS Safari extension.
 
-## 2026-03-22 — 0.7.0
+## 2026-03-22 — v0.5.0
 
 ### Refactor
 
@@ -44,7 +44,7 @@
 - Updated README coverage for schema issue filing, local media bundle consumption, and current known gaps.
 - Added `docs/media-bundle-contract.md` to document the shared `LogGPT Plus` and `extract-chat` media layout.
 
-## 2025-11-20 — 1.1.4
+## 2025-11-20 — v0.4.0
 
 ### Enhancements
 
@@ -53,7 +53,7 @@
 
 ### Packaging
 
-- Bumped project version to 1.1.4 in `pyproject.toml`, `setup.py`, and package metadata.
+- Bumped project version to v0.4.0 in `pyproject.toml`, `setup.py`, and package metadata.
 
 ## 2025-11-06
 
