@@ -6,12 +6,11 @@ This module provides the public interface for all formatters.
 
 from typing import Optional
 
+from extract_chat.formatters.base import BaseFormatter, FormattingError
+from extract_chat.formatters.html_formatter import HTMLFormatter
+from extract_chat.formatters.jekyll_formatter import JekyllPage, JekyllTurnExporter
+from extract_chat.formatters.markdown_formatter import MarkdownFormatter
 from extract_chat.schemas.conversation import Conversation
-
-from .base import BaseFormatter, FormattingError
-from .html_formatter import HTMLFormatter
-from .jekyll_exporter import JekyllPage, JekyllTurnExporter
-from .markdown_formatter import MarkdownFormatter
 
 # Rich metadata functions removed - not used in simplified architecture
 # from .rich_metadata import (format_content_references,

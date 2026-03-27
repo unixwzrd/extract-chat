@@ -3,12 +3,14 @@ from __future__ import annotations
 import re
 from collections import deque
 from collections.abc import Mapping, Sequence
-from typing import Any, Deque, Dict, List
+from typing import Any, Callable, Deque, Dict, List, Tuple
 
 SHORT_SNIPPET_WORD_LIMIT = 2
 
 __all__ = [
     "extract_reference_groups",
+    "build_reference_payload",
+    "strip_sources_and_references",
     "generate_backlink_labels",
     "replace_inline_citation_markers",
     "format_apa_reference_entry",
@@ -86,6 +88,91 @@ def extract_reference_groups(conversation_blocks: Sequence[Mapping[str, Any]]) -
     return grouped_list
 
 
+def build_reference_payload(
+    conversation_blocks: Sequence[Mapping[str, Any]],
+    *,
+    occurrence_filter: Callable[[Dict[str, Any]], bool] | None = None,
+) -> Dict[str, Any]:
+    """Return canonical reference groups plus summary stats.
+
+    The payload annotates each occurrence with a stabilized backlink label so
+    renderers do not repeat lettering logic. Pass ``occurrence_filter`` when a
+    renderer needs to restrict which occurrences get backlinks (e.g. Jekyll
+    cross-page links that require a section slug).
+    """
+
+    groups = extract_reference_groups(conversation_blocks)
+
+    total_occurrences = 0
+    labeled_occurrences = 0
+    orphan_groups = 0
+
+    for group in groups:
+        occurrences = group.get("occurrences") or []
+        total_occurrences += len(occurrences)
+
+        valid_occurrences: List[Dict[str, Any]] = []
+        for occ in occurrences:
+            occ.pop("backlink_label", None)
+            if occurrence_filter is not None:
+                is_valid = bool(occurrence_filter(occ))
+            else:
+                is_valid = bool(occ.get("unique_id"))
+            occ["is_valid_backlink_target"] = bool(is_valid)
+            if is_valid:
+                valid_occurrences.append(occ)
+
+        labels = generate_backlink_labels(len(valid_occurrences))
+        for idx, occ in enumerate(valid_occurrences):
+            occ["backlink_label"] = labels[idx]
+
+        labeled_occurrences += len(valid_occurrences)
+        if not valid_occurrences:
+            orphan_groups += 1
+
+        for occ in occurrences:
+            occ.setdefault("backlink_label", "")
+
+        group.setdefault("stats", {})
+        group["stats"].update(
+            {
+                "total_occurrences": len(occurrences),
+                "labeled_occurrences": len(valid_occurrences),
+            }
+        )
+
+    payload = {
+        "groups": groups,
+        "stats": {
+            "total_references": len(groups),
+            "total_occurrences": total_occurrences,
+            "labeled_occurrences": labeled_occurrences,
+            "orphan_references": orphan_groups,
+        },
+    }
+    return payload
+
+
+def strip_sources_and_references(text: str) -> tuple[str, str]:
+    """Remove assistant-provided sources block and trailing references headings."""
+
+    if not text:
+        return text, ""
+
+    sources_block = ""
+    pattern = re.compile(r"\*\*Sources:\*\*.*?(?=## References|\Z)", re.S)
+    match = pattern.search(text)
+    if match:
+        sources_block = match.group(0).strip()
+        text = text[: match.start()] + text[match.end():]
+
+    text = text.rstrip()
+    if "## References" in text:
+        text = text.split("## References", 1)[0].rstrip()
+
+    return text, sources_block
+
+
 def generate_backlink_labels(count: int) -> List[str]:
     alphabet = "abcdefghijklmnopqrstuvwxyz"
     labels: List[str] = []
@@ -133,7 +220,8 @@ def replace_inline_citation_markers(
         except (TypeError, ValueError):
             continue
         unique_id = ref.get("unique_id")
-        label = (ref.get("occurrence_label") or "").strip()
+        label = ""
+        ref["occurrence_label"] = ""
         if ref.get("skip_citation"):
             suppressed_keys.add((ref_id, start, end))
             continue
@@ -158,8 +246,12 @@ def replace_inline_citation_markers(
 
     def _emit_sup(seq: int, unique_id: str | None) -> str:
         if not unique_id:
-            return f'<sup>{seq}</sup>'
-        return f'<sup id="ref-source-{unique_id}"><a href="#ref-target-{unique_id}">{seq}</a></sup>'
+            return f'<sup>[{seq}]</sup>'
+        return (
+            f'<sup id="ref-source-{unique_id}">'
+            f'<a href="#ref-target-{unique_id}">[{seq}]</a>'
+            f'</sup>'
+        )
 
     def _repl(match: re.Match[str]) -> str:
         nonlocal last_key, last_seq, last_pos
@@ -174,7 +266,12 @@ def replace_inline_citation_markers(
             return match.group(0)
         seq, unique_id, label = queue.popleft()
         if last_key and last_key[0] == ref_id and abs(start_line - last_key[1]) <= 3 and abs(end_line - last_key[2]) <= 3:
-            return _emit_anchor(unique_id)
+            if last_seq is not None and seq == last_seq:
+                return _emit_anchor(unique_id)
+            last_key = key
+            last_seq = seq
+            last_pos = match.start()
+            return _emit_sup(seq, unique_id)
         if last_seq is not None and seq == last_seq and last_pos is not None and match.start() - last_pos < 50:
             last_key = key
             return _emit_anchor(unique_id)
@@ -222,7 +319,7 @@ def format_apa_reference_entry(info: Mapping[str, Any], html: bool) -> str:
     url = (info.get("url") or "").strip()
     pub_date = info.get("pub_date")
     year = _extract_year(pub_date)
-    year_fragment = f"({year})." if year else "(n.d.)."
+    year_fragment = f"({year})." if year else ""
 
     # Escape pipe characters in reference titles to prevent Jekyll table interpretation
     title = title.replace('|', '\\|')
@@ -345,44 +442,67 @@ def _merge_groups_by_base_url(groups: List[Dict[str, Any]]) -> List[Dict[str, An
             initial_groups[group_key] = []
         initial_groups[group_key].append(group)
     
-    # Step 2: Merge groups with same base URL and short text snippets
-    merged_groups = {}
-    base_url_to_groups = {}
-    
-    for group_key, group_list in initial_groups.items():
+    # Step 2: Merge groups with same base URL when their snippets truly align
+    final_groups: List[Dict[str, Any]] = []
+    base_url_clusters: Dict[str, List[tuple[str, List[Dict[str, Any]]]]] = {}
+
+    for group_list in initial_groups.values():
         if not group_list:
             continue
-            
-        # Get base URL and text snippet info from first group
-        first_group = group_list[0]
-        meta = first_group.get("meta") or {}
-        url = meta.get("url", "")
+
+        first_meta = group_list[0].get("meta") or {}
+        url = first_meta.get("url", "")
         base_url = _get_base_url(url)
-        text = meta.get("text", "")
-        
-        # If base_url exists and text is short (like LinkedIn), group by base_url
-        # Use string length instead of word count for better performance
-        if base_url and len(text) <= 200:  # Short snippet threshold (200 chars)
-            if base_url not in base_url_to_groups:
-                base_url_to_groups[base_url] = []
-            base_url_to_groups[base_url].extend(group_list)
+        text_sample = first_meta.get("text", "") or ""
+
+        if base_url:
+            title_norm = _normalize_text(first_meta.get("reference_title") or first_meta.get("title"))
+            clusters = base_url_clusters.setdefault(base_url, [])
+            for group in group_list:
+                placed = False
+                group_meta = group.get("meta") or {}
+                group_title = _normalize_text(group_meta.get("reference_title") or group_meta.get("title"))
+                group_text = group_meta.get("text") or ""
+                group_snippet_norm = _normalize_snippet(group_text)
+                group_len = len(group_text or "")
+                for idx, (cluster_title, cluster_groups) in enumerate(clusters):
+                    allow_merge = cluster_title == group_title
+                    if not allow_merge and group_snippet_norm:
+                        cluster_meta = cluster_groups[0].get("meta") or {}
+                        cluster_text = cluster_meta.get("text") or ""
+                        cluster_snippet_norm = _normalize_snippet(cluster_text)
+                        cluster_len = len(cluster_text or "")
+                        cluster_word_count = _snippet_word_count(cluster_text)
+                        group_word_count = _snippet_word_count(group_text)
+                        if (
+                            cluster_snippet_norm
+                            and cluster_snippet_norm == group_snippet_norm
+                            and max(group_len, cluster_len) <= 200
+                        ):
+                            allow_merge = True
+                        elif (
+                            group_word_count <= SHORT_SNIPPET_WORD_LIMIT
+                            or cluster_word_count <= SHORT_SNIPPET_WORD_LIMIT
+                        ):
+                            allow_merge = True
+                    if not allow_merge:
+                        continue
+                    if any(_snippets_should_merge(group, existing) for existing in cluster_groups):
+                        cluster_groups.append(group)
+                        placed = True
+                        break
+                if not placed:
+                    clusters.append((group_title, [group]))
         else:
-            # Keep original grouping
-            merged_groups[group_key] = group_list
-    
-    # Add merged base URL groups
-    for base_url, all_groups in base_url_to_groups.items():
-        merged_groups[f"merged_url:{base_url}"] = all_groups
-    
-    # Convert back to list format
-    final_groups = []
-    for group_list in merged_groups.values():
-        if len(group_list) == 1:
-            final_groups.append(group_list[0])
-        else:
-            # Merge multiple groups into one
-            final_groups.append(_combine_reference_group_cluster(group_list))
-    
+            final_groups.extend(group_list)
+
+    for clusters in base_url_clusters.values():
+        for cluster_title, cluster_groups in clusters:
+            if len(cluster_groups) == 1:
+                final_groups.append(cluster_groups[0])
+            else:
+                final_groups.append(_combine_reference_group_cluster(cluster_groups))
+
     return final_groups
 
 

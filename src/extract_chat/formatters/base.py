@@ -148,35 +148,35 @@ class BaseFormatter(ABC):
         if not text:
             return ""
         
-        # Use more aggressive Unicode normalization
+        normalization_mode = self.config.get("normalization_mode", "safe")
+
         try:
             text = ftfy.fix_text(
-                text, 
-                normalization='NFKC', 
-                fix_character_width=True, 
-                fix_latin_ligatures=True
+                text,
+                normalization='NFKC',
+                fix_character_width=True,
+                fix_latin_ligatures=True,
             )
-        except ImportError:
-            # Fallback if ftfy is not available
+        except Exception:
             pass
-        
-        
-        # Additional Unicode cleanup for problematic characters
 
-        # Remove or replace problematic Unicode characters
-        # Replace citation markers and other unprintable characters
+        try:
+            from unicodefix.transforms import clean_text
+
+            text = clean_text(
+                text,
+                preserve_invisible=(normalization_mode != "strict"),
+                preserve_quotes=True,
+                preserve_dashes=True,
+            )
+        except Exception:
+            pass
+
         text = re.sub(r'[^\x00-\x7F\u00A0-\uFFFF]', '', text)
-        
-        # Remove specific problematic Unicode ranges
-        text = re.sub(r'[\uE000-\uF8FF]', '', text)  # Private Use Area
-        text = re.sub(r'[\uFFF0-\uFFFF]', '', text)  # Specials
-        
-        # Normalize line endings
+        text = re.sub(r'[\uE000-\uF8FF]', '', text)
+        text = re.sub(r'[\uFFF0-\uFFFF]', '', text)
         text = text.replace('\r\n', '\n').replace('\r', '\n')
-        
-        # Note: Triple backticks are handled specifically in conversation context formatting
-        
-        # Remove excessive whitespace while preserving intentional formatting
+
         lines = text.split('\n')
         normalized_lines = []
         

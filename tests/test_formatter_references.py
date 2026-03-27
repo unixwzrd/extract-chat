@@ -1,19 +1,19 @@
 import json
 import re
-from pathlib import Path
 
 from extract_chat.context.document_context import DocumentContext
 from extract_chat.formatters.html_formatter import HTMLFormatter
 from extract_chat.formatters.markdown_formatter import MarkdownFormatter
-from extract_chat.formatters.reference_utils import (
+from extract_chat.processors.reference_processing.citation_processor import (
+    CitationProcessor,
+)
+from extract_chat.processors.reference_processing.reference_utils import (
+    build_reference_payload,
     extract_reference_groups,
     replace_inline_citation_markers,
 )
-from extract_chat.processors.citation_processor import CitationProcessor
 from extract_chat.schemas.conversation import Conversation
-
-SAMPLE_PATH = Path("tmp/PA-Paper/chatgpt_convo_686ab2a1-6578-8003-b0e6-79b76323e002.json")
-TURN_ID = "c3df4f37-ab12-4ab6-a810-6b687a759b83"
+from tests.sample_data import SAMPLE_PATH, TURN_ID
 
 
 def _load_conversation() -> Conversation:
@@ -279,3 +279,66 @@ def test_markdown_and_html_references_are_consistent() -> None:
 
     assert "Metadata missing" not in markdown_refs_section
     assert "Metadata missing" not in html_refs_section
+
+
+def test_build_reference_payload_assigns_backlink_labels() -> None:
+    references_table = {
+        "references": [
+            {
+                "unique_id": "uid1",
+                "turn_id": 1,
+                "ref_id": 1,
+                "seq": 1,
+                "title": "Doc One",
+                "url": "https://example.com/one",
+                "text": "Snippet A",
+                "start_line": 10,
+                "end_line": 12,
+            },
+            {
+                "unique_id": "uid2",
+                "turn_id": 1,
+                "ref_id": 1,
+                "seq": 1,
+                "title": "Doc One",
+                "url": "https://example.com/one",
+                "text": "Snippet B",
+                "start_line": 20,
+                "end_line": 22,
+            },
+            {
+                "unique_id": "",
+                "turn_id": 1,
+                "ref_id": 1,
+                "seq": 1,
+                "title": "Doc One",
+                "url": "https://example.com/one",
+                "text": "Snippet orphan",
+                "start_line": 30,
+                "end_line": 32,
+            },
+        ]
+    }
+
+    payload = build_reference_payload(
+        [
+            {
+                "type": "assistant",
+                "references_table": references_table,
+                "metadata": {"reference_turn_number": 1},
+            }
+        ]
+    )
+
+    groups = payload["groups"]
+    assert len(groups) == 1
+    labels = [
+        occ.get("backlink_label")
+        for occ in groups[0]["occurrences"]
+        if occ.get("unique_id")
+    ]
+    assert labels == ["a", "b"], "Expected alphabetical labels for valid occurrences"
+    stats = payload["stats"]
+    assert stats["total_occurrences"] == 3
+    assert stats["labeled_occurrences"] == 2
+    assert stats["orphan_references"] == 0

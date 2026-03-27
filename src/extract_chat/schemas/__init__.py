@@ -5,25 +5,65 @@ This module provides comprehensive Pydantic models for parsing and validating
 ChatGPT conversation JSON data, including all metadata fields and nested structures.
 """
 
-from .conversation import (Conversation, Message, MessageAuthor,
-                           MessageContent, Turn)
-from .metadata import (  # Plugin and tool structures; Search and citation structures
-    AdaVisualization, AggregateResult, AppPairing, AsyncTaskStatusMessages,
-    Attachment, AudioAssetPointer, Canvas, Citation, CitationFormat,
-    CitationMetadata, CiteMetadata, ContentPart, ContentReference,
-    ContentThought, ContentWorkspace, FinishDetails, ImageResult,
-    InvokedPlugin, JitPluginData, ModelSwitcherDeny, ParagenVariantsInfo,
-    Permission, SearchQuery, SearchResultGroup, SerializationMetadata,
-    SonicClassificationResult, UserContextMessageData)
+from extract_chat.schemas.conversation import (
+    Conversation,
+    Message,
+    MessageAuthor,
+    MessageContent,
+    Turn,
+)
+from extract_chat.schemas.metadata import (  # Plugin and tool structures; Search and citation structures
+    AdaVisualization,
+    AggregateResult,
+    AppPairing,
+    AsyncTaskStatusMessages,
+    Attachment,
+    AudioAssetPointer,
+    Canvas,
+    Citation,
+    CitationFormat,
+    CitationMetadata,
+    CiteMetadata,
+    ContentPart,
+    ContentReference,
+    ContentThought,
+    ContentWorkspace,
+    FinishDetails,
+    ImageResult,
+    InvokedPlugin,
+    JitPluginData,
+    ModelSwitcherDeny,
+    ParagenVariantsInfo,
+    Permission,
+    SearchQuery,
+    SearchResultGroup,
+    SerializationMetadata,
+    SonicClassificationResult,
+    UserContextMessageData,
+)
+from extract_chat.schemas.render_models import (
+    RenderDocument,
+    RenderTurn,
+    SchemaDiagnostics,
+    SchemaWarning,
+    SystemContextEntry,
+    ToolActivityItem,
+)
 
 __all__ = [
     # Base conversation models
     'MessageAuthor',
-    'MessageContent', 
+    'MessageContent',
     'Message',
     'Turn',
     'Conversation',
-    
+    'RenderDocument',
+    'RenderTurn',
+    'ToolActivityItem',
+    'SystemContextEntry',
+    'SchemaWarning',
+    'SchemaDiagnostics',
+
     # Metadata models
     'JitPluginData',
     'InvokedPlugin',
@@ -52,4 +92,4 @@ __all__ = [
     'AudioAssetPointer',
     'ContentThought',
     'ContentWorkspace'
-] 
+]

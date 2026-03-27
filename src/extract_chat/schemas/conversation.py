@@ -6,10 +6,10 @@ allowing automatic validation and transformation without manual processing.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Set, Union
 
 import ftfy
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def _normalize_text(text: str) -> str:
@@ -166,6 +166,16 @@ class Conversation(BaseModel):
     class Config:
         extra = "allow"
 
+    @field_validator("async_status", mode="before")
+    @classmethod
+    def _coerce_async_status(cls, value: Any) -> Optional[str]:
+        """Allow integer async status values from source JSON."""
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        return str(value)
+
     def get_conversation_flow_turns(self) -> List[tuple[str, Turn, Optional[datetime]]]:
         """Get turns following parent-child relationships to maintain conversation flow."""
         turns_with_times = []
@@ -188,33 +198,39 @@ class Conversation(BaseModel):
         return turns_with_times
     
     def _walk_conversation_tree(
-        self, 
-        turn_id: str, 
-        turns_with_times: List[tuple[str, Turn, Optional[datetime]]], 
-        processed_turns: set
-    ):
-        """Recursively walk through the conversation tree following parent-child relationships."""
-        if turn_id in processed_turns or turn_id not in self.mapping:
-            return
-        
-        processed_turns.add(turn_id)
-        turn = self.mapping[turn_id]
-        
-        # Extract create_time from turn or message
-        create_time = None
-        if turn.create_time:
-            create_time = turn.create_time
-        elif turn.message and turn.message.create_time:
-            create_time = turn.message.create_time
-        
-        # Convert to datetime
-        timestamp = datetime.fromtimestamp(create_time) if create_time else None
-        
-        turns_with_times.append((turn_id, turn, timestamp))
-        
-        # Process children in order
-        for child_id in turn.children:
-            self._walk_conversation_tree(child_id, turns_with_times, processed_turns)
+        self,
+        turn_id: str,
+        turns_with_times: List[tuple[str, Turn, Optional[datetime]]],
+        processed_turns: Set[str],
+    ) -> None:
+        """Traverse the conversation tree iteratively to avoid recursion limits."""
+
+        stack: List[str] = [turn_id]
+
+        while stack:
+            current_turn_id = stack.pop()
+
+            if current_turn_id in processed_turns or current_turn_id not in self.mapping:
+                continue
+
+            processed_turns.add(current_turn_id)
+            turn = self.mapping[current_turn_id]
+
+            # Extract create_time from turn or message
+            create_time = None
+            if turn.create_time:
+                create_time = turn.create_time
+            elif turn.message and turn.message.create_time:
+                create_time = turn.message.create_time
+
+            # Convert to datetime
+            timestamp = datetime.fromtimestamp(create_time) if create_time else None
+
+            turns_with_times.append((current_turn_id, turn, timestamp))
+
+            # Push children in reverse so they are processed in declared order
+            for child_id in reversed(turn.children):
+                stack.append(child_id)
     
     def get_chronological_turns(self) -> List[tuple[str, Turn, Optional[datetime]]]:
         """Get turns sorted by create_time with timestamps converted to datetime."""
@@ -493,45 +509,46 @@ class Conversation(BaseModel):
         self, parent_turn_id: str, parent_turn: Turn, used_internal_turn_ids: set
     ) -> List[Dict[str, Any]]:
         """Get internal dialogue blocks that are descendants of the given turn."""
-        internal_blocks = []
-        processed_turns = set()
-        
-        def traverse_subtree(turn_id: str):
-            if turn_id in processed_turns or turn_id not in self.mapping:
-                return
-            
-            processed_turns.add(turn_id)
-            turn = self.mapping[turn_id]
-            
+        internal_blocks: List[Dict[str, Any]] = []
+        processed_turns: Set[str] = set()
+
+        stack: List[str] = list(reversed(parent_turn.children))
+
+        while stack:
+            current_id = stack.pop()
+
+            if current_id in processed_turns or current_id not in self.mapping:
+                continue
+
+            processed_turns.add(current_id)
+            turn = self.mapping[current_id]
+
             if not turn.message:
-                return
-            
-            # Check if this is internal dialogue and hasn't been used yet
-            if (turn.message.author.role == "tool" or
-                    turn.message.content.content_type in [
-                        "user_editable_context", "model_editable_context", 
-                        "thoughts", "reasoning_recap"
-                    ]):
-                
-                # Skip if this turn has already been used
-                if turn_id in used_internal_turn_ids:
-                    print(f"DEBUG: Skipping already used internal turn {turn_id}")
-                    return
-                
-                internal_block = self._create_internal_dialogue_block(turn_id, turn.message)
-                if internal_block:
-                    internal_blocks.append(internal_block)
-                    used_internal_turn_ids.add(turn_id)  # Mark as used
-                    print(f"DEBUG: Added internal block {turn_id} to used set")
-            
-            # Continue traversing children
-            for child_id in turn.children:
-                traverse_subtree(child_id)
-        
-        # Start traversal from the parent turn's children
-        for child_id in parent_turn.children:
-            traverse_subtree(child_id)
-        
+                continue
+
+            if (
+                turn.message.author.role == "tool"
+                or turn.message.content.content_type
+                in [
+                    "user_editable_context",
+                    "model_editable_context",
+                    "thoughts",
+                    "reasoning_recap",
+                ]
+            ):
+                if current_id in used_internal_turn_ids:
+                    print(f"DEBUG: Skipping already used internal turn {current_id}")
+                else:
+                    internal_block = self._create_internal_dialogue_block(current_id, turn.message)
+                    if internal_block:
+                        internal_blocks.append(internal_block)
+                        used_internal_turn_ids.add(current_id)
+                        print(f"DEBUG: Added internal block {current_id} to used set")
+
+            # Push children in reverse order to maintain processing sequence
+            for child_id in reversed(turn.children):
+                stack.append(child_id)
+
         return internal_blocks
     
     def _create_internal_dialogue_block(self, turn_id: str, message: Message) -> Optional[Dict[str, Any]]:

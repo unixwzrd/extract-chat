@@ -182,8 +182,6 @@ class DocumentContext:
                     elif isinstance(part, dict):
                         if part.get('text'):
                             text_parts.append(str(part.get('text')))
-                        elif isinstance(part.get('content'), str):
-                            text_parts.append(part.get('content'))
                     else:
                         s = str(part)
                         if '【' in s and '†' in s and 'L' in s:
@@ -206,10 +204,7 @@ class DocumentContext:
         if isinstance(content, str):
             return content
 
-        try:
-            return str(content) if content is not None else ""
-        except Exception:
-            return ""
+        return ""
 
     def extract_text_from_message(self, message: Any) -> str:
         """Extract text from a message object that has a .content field or is a mapping."""

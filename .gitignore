@@ -180,6 +180,7 @@ data/
 
 # Symlink to data collected by venvutil functions
 .venvutil
+tmp/
 utils
 .codeiumignore
 project-planning
@@ -200,3 +201,4 @@ PA-Paper
 
 # Codex items
 AGENTS.md
+.project-planning/

@@ -1,199 +1,223 @@
 # extract-chat
 
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Pydantic](https://img.shields.io/badge/Pydantic-2.0%2B-red)](#) [![UnicodeFix](https://img.shields.io/badge/UnicodeFix-Integrated-orange)](#)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Pydantic](https://img.shields.io/badge/Pydantic-2.0%2B-red)](#) [![UnicodeFix](https://img.shields.io/badge/UnicodeFix-Integrated-orange)](#)
 
-Extract ChatGPT conversations from exported JSON files and render them as Markdown, HTML, or Jekyll-ready sections with proper citation handling and reference management.
+`extract-chat` converts OpenAI and ChatGPT exported conversation JSON into readable Markdown or HTML conversation logs, with preserved citation links, schema diagnostics, and collapsible tool activity.
 
-## Features
+## What It Produces
 
-- **Multi-format Export**: Generate Markdown, HTML, or Jekyll-ready section pages
-- **Intelligent Citation Processing**: Detects and processes inline citation markers like `【refId†Lstart-Lend】`
-- **Advanced Reference Grouping**: Sophisticated two-step algorithm that properly groups references while preventing incorrect merging of distinct articles
-- **Unicode Cleanup**: Integrated UnicodeFix for clean, professional output
-- **Cross-page Citation Links**: Maintains working citation links across Jekyll section pages
-- **Metadata Merging**: Combines data from both `citations` and `content_references` for complete reference information
-- **Reference Title Prioritization**: Uses `source_label` when available, falling back to `title` for optimal display
+- A normal user/assistant conversation transcript.
+- A separate `System Context` section when the export contains reusable profile or instruction context.
+- A per-assistant-turn `Tools Used` collapsible section that gathers tool calls and hidden/internal assistant activity in timestamp order.
+- A per-assistant-turn `References` collapsible section with forward and backward citation links.
+- Optional Jekyll page export for long assistant turns and reference bundles.
 
 ## Installation
 
-Requires Python 3.11+.
-
-### Regular Installation
-
-For normal usage:
+Requires Python 3.10+.
 
 ```bash
 pip install .
 ```
 
-### Development Installation
-
-For development work (editable install):
+For development:
 
 ```bash
 pip install -e .
 ```
 
-This uses the `src` layout. The package name is `extract-chat` and the import is `extract_chat`.
+Notes:
 
-The command line entry point exposed by the package is `extract-chat`.
+- The package import is `extract_chat`.
+- The CLI entry point is `extract-chat`.
+- HTML rendering uses the `markdown` package.
+- Unicode normalization uses [`UnicodeFix`](https://github.com/unixwzrd/UnicodeFix), currently installed from GitHub.
 
 ## Quick Start
 
+Markdown:
+
 ```bash
-# Markdown (default)
 extract-chat path/to/conversation.json -o out.md
-
-# HTML with optional CSS
-extract-chat path/to/conversation.json --format html --css-file styles/site.css --output out.html
-
-# Jekyll section export (writes multiple files into a directory)
-extract-chat path/to/conversation.json \
-  --format jekyll \
-  --jekyll-turn-id c3df4f37-ab12-4ab6-a810-6b687a759b83 \
-  --jekyll-base-slug 2025-09-25-pa-paper \
-  --output tmp/jekyll-pages
 ```
 
-## CLI Usage
+HTML:
 
-### Common Options
+```bash
+extract-chat path/to/conversation.json --format html --output out.html
+```
+
+Jekyll bundle:
+
+```bash
+extract-chat path/to/conversation.json \
+  --format jekyll \
+  --jekyll-turn-id <assistant-turn-id> \
+  --jekyll-base-slug my-conversation \
+  --output tmp/jekyll-pages \
+  --force
+```
+
+Batch validation run:
+
+```bash
+extract-chat \
+  --batch-dir tmp/consolidated/JSON \
+  --output tmp/batch-validate-20260318-archive-run \
+  --batch-formats both
+```
+
+## CLI
+
+Common options:
 
 - `-f, --format`: `markdown` (default), `html`, or `jekyll`
-- `-o, --output`: Output file for Markdown/HTML. For Jekyll, this should be a directory where the section pages will be written
-- `-c, --css-file`: Custom CSS path for HTML output (optional)
-- `--force`: Overwrite the destination if it already exists
+- `-o, --output`: output file for Markdown/HTML, or output directory for Jekyll
+- `-c, --css-file`: custom CSS file for HTML output
+- `-v, --verbose`: enable debug logging
+- `--log-file`: write logs to a file
+- `--force`: overwrite existing files
+- `--schema-warning-detail`: `summary` (default) or `full`
+- `--media-index`: write a media inventory JSON file under a conversation-named subdirectory next to the output
+- `--gh-file-schema-issue`: use `gh` to file schema-drift issues automatically with duplicate detection
+- `--gh-repo`: override the GitHub repo used for automatic schema issue filing
+- `-V, --version`: show the installed version
 
-### Jekyll-Specific Options
+Batch options:
 
-- `--jekyll-turn-id`: (Required when `--format jekyll`) Assistant turn identifier to export
-- `--jekyll-base-slug`: Base slug used for generated filenames/permalinks. When omitted we attempt to derive one from the conversation title
-- `--jekyll-layout`: Front-matter `layout` value for Jekyll pages (defaults to `page`)
-- `--jekyll-reference-title`: Title used for the generated references page (defaults to `References`)
+- `--batch-dir`: directory of JSON files to process in one validation run
+- `--batch-formats`: `both` (default), `markdown`, or `html`
+- In batch mode, `--output` is the run root directory and the tool creates `markdown/`, `html/`, and `reports/` under it
 
-## Citation System
+Jekyll-specific options:
 
-### Markdown Citations
+- `--jekyll-turn-id`: assistant turn id to export
+- `--jekyll-base-slug`: base slug for generated pages
+- `--jekyll-layout`: front matter layout value
+- `--jekyll-reference-title`: title for the references page
 
-- Inline markers in the model response like `【1†28:249-258】` become superscript links with anchors at the citation site
-- Example: `<sup id="cite-1_28_249_258"><a href="#ref-1_28_249_258">1</a></sup>`
-- The References section renders entries per turn/reference with anchors like `<a id="ref-1_28_249_258"></a>`
-- Each reference includes a back-link `[↩︎](#cite-1_28_249_258)`
+## Schema Diagnostics
 
-### HTML Citations
+`extract-chat` is Pydantic-first and tries to keep working when OpenAI export JSON drifts.
 
-- HTML output mirrors the Markdown citation structure
-- Superscript anchors link forward to the references section
-- Each reference includes a backlink to the originating citation
+When the loader sees unexpected keys, content types, or incompatible shapes, it will:
 
-### Jekyll Citations
+- emit CLI warnings
+- continue with fallback handling where possible
+- write a schema exception report next to the output when warnings were raised
 
-- Cross-page citation linking using Jekyll's `relative_url` helper
-- Stable cross-page links regardless of site base paths
-- Separate references page with comprehensive citation management
+The report includes:
 
-## Reference Processing
+- package version
+- encountered content types
+- unknown top-level keys
+- structured warnings with paths and representative turn ids
 
-The system includes sophisticated reference grouping and processing:
+If you hit a schema variant that renders poorly or fails to parse, open a GitHub issue and attach:
 
-- **Two-step Grouping Algorithm**: Groups by `reference_title` with text preview, then merges groups with same `base_url` and short snippets
-- **Reference Title Prioritization**: Uses `source_label` when available, falls back to `title`
-- **Unicode Cleanup**: Integrated UnicodeFix for clean, professional output
-- **Pipe Character Escaping**: Prevents Jekyll table interpretation issues
+1. the generated schema exception report
+2. a redacted sample JSON fragment if possible
+
+The CLI prints a prefilled GitHub issue URL for schema drift, and the generated schema exception report includes the same `issue_url` so reporters can jump straight into the repository issue tracker with the warning codes and content types pre-populated.
+
+When warnings are raised, the tool also writes a `*-schema-issue.md` issue bundle next to the schema report. That file is designed to be uploaded or pasted into a GitHub issue without retyping the schema details from the terminal.
+
+By default, schema warnings are summarized on stderr. Use `--schema-warning-detail full` if you want every warning entry printed to the terminal.
+
+If you have the GitHub CLI installed and authenticated, you can opt into automatic issue filing:
+
+```bash
+extract-chat path/to/conversation.json \
+  -o out.md \
+  --gh-file-schema-issue
+```
+
+Duplicate suppression is signature-based, so the tool checks open issues first and skips creating a new issue when a matching schema signature already exists.
+
+## Media Inventory
+
+Use `--media-index` to generate a `media-index.json` file under a subdirectory named after the conversation stem. This does not download remote media; it inventories known media pointers, URLs, asset ids, and related attachment fields so a later pass can fetch them or link them into Markdown/HTML.
+
+If a sibling extracted media bundle exists using the shared `LogGPT Plus` contract:
+
+- `<stem>/media/`
+- optional `<stem>/media-manifest.json`
+
+then `extract-chat` will prefer local media links in the rendered `Media` section for each turn while preserving the original remote pointer metadata.
+
+The bundle contract is documented in [`docs/media-bundle-contract.md`](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/media-bundle-contract.md).
+
+## Batch Validation Reports
+
+Batch mode writes:
+
+- `reports/summary.md` for human review
+- `reports/results.csv` for machine analysis
+
+The summary includes:
+
+- total discovered files
+- markdown/html success and failure counts
+- files with schema warnings
+- files with schema exception reports
+- top warning codes
+- top failure types
+
+This is intended for validating mixed-era archives without writing back into the source tree.
+
+## Citation Behavior
+
+- Inline OpenAI export citation markers are replaced with superscript links in assistant text.
+- Each assistant turn renders its own `References` section.
+- References include backlinks to the citation site within that same assistant turn.
+- Assistant-authored `**Sources:**` blocks are stripped from the primary Markdown and HTML transcript outputs so the canonical references come only from processed metadata.
+- Jekyll export keeps a references page and a reference audit file for sectioned content.
+
+## Output Model
+
+Primary Markdown and HTML outputs follow this structure:
+
+1. document metadata
+2. optional `System Context`
+3. visible transcript turns
+4. per assistant turn:
+   - `Tools Used`
+   - assistant response body
+   - `References`
+
+This keeps the transcript readable while preserving provenance and research metadata.
+
+## Known Gaps
+
+- Authenticated media downloading still belongs to `LogGPT Plus`, not `extract-chat`.
+- ZIP auto-extract for `<stem>.media.zip` is not implemented yet; `extract-chat` currently consumes the extracted `<stem>/media/` layout.
+- Chunking/vector export is still planned, not implemented.
+- The test suite still emits Pydantic v2 deprecation warnings from older schema modules that have not been migrated to `ConfigDict` yet.
+
+## Project Notes
+
+- `tmp/unified-output/` and `tmp/jekyll-pages-fix10/` contain reference outputs used as behavior guides, especially for citation integrity.
+- Jekyll remains supported, but Markdown and HTML are the primary public outputs.
+- `LogGPT` / `LogGPT Plus` integration now uses a shared naming contract for JSON and optional media bundles.
 
 ## Development
 
-### Running Tests
+Run tests with:
 
 ```bash
-# Run citation processor tests
-python tests/test_citation_processor.py
-
-# Generate reference report for a conversation
-python tests/refs_report.py path/to/conversation.json
-
-# Test formatter references
-python tests/test_formatter_references.py
-
-# Test Jekyll exporter
-python tests/test_jekyll_exporter.py
+pytest -q
 ```
 
-### Project Structure
+There is also a minimal GitHub Actions workflow that runs tests and a packaging smoke test on pushes and pull requests.
 
-```
-src/extract_chat/
-├── cli.py                 # Command-line interface
-├── processors/            # Citation and turn processing
-│   ├── citation_processor.py
-│   ├── turn_processor.py
-│   └── formatter_adapter.py
-├── formatters/           # Output formatters
-│   ├── markdown_formatter.py
-│   ├── html_formatter.py
-│   ├── jekyll_exporter.py
-│   └── reference_utils.py
-├── schemas/              # Data models
-│   ├── conversation.py
-│   └── metadata.py
-└── context/              # Document context management
-    └── document_context.py
-```
+The tests cover:
 
-## Contributing
-
-We welcome contributions! Here's how you can help:
-
-1. **Bug Reports**: Found a bug? Please open an issue with:
-   - Description of the problem
-   - Steps to reproduce
-   - Expected vs actual behavior
-   - Sample JSON file (if applicable)
-
-2. **Feature Requests**: Have an idea? Open an issue to discuss it
-
-3. **Code Contributions**: 
-   - Fork the repository
-   - Create a feature branch
-   - Make your changes
-   - Add tests for new functionality
-   - Ensure all tests pass
-   - Submit a pull request
-
-4. **Documentation**: Help improve docs, examples, or README
-
-### Development Guidelines
-
-- Follow the existing code style and patterns
-- Add type hints for new functions
-- Include tests for new functionality
-- Update documentation as needed
-- Keep commits focused and atomic
-
-## Support This Project
-
-If extract-chat has been useful to you, please consider supporting its development:
-
-- [Patreon](https://patreon.com/unixwzrd)
-- [Ko-Fi](https://ko-fi.com/unixwzrd)
-- [Buy Me a Coffee](https://buymeacoffee.com/unixwzrd)
-
-Your support helps maintain and improve this tool for everyone.
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md) for detailed release notes and changes.
+- traversal and transcript shaping
+- citation grouping and numbering
+- Markdown/HTML reference parity
+- CLI execution
+- Jekyll export wiring
 
 ## License
 
-Copyright (c) 2025 unixwzrd
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Built with Python 3.11+ and [Pydantic](https://pydantic.dev/) for robust data validation
-- Uses [UnicodeFix](https://github.com/unixwzrd/UnicodeFix) for comprehensive Unicode cleanup
-- Integrates with [ftfy](https://github.com/rspeer/python-ftfy) for text normalization
-- Designed for Jekyll static site generation
-- Leverages modern Python type hints and data modeling
+MIT. See [LICENSE](LICENSE).

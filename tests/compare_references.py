@@ -7,8 +7,8 @@ turns but never made it into the final reference list we render.
 Examples
 --------
 $ python tests/compare_references.py \
-    tmp/PA-Paper/chatgpt_convo_....json \
-    --html tmp/PA-Paper/OpenAI-PA-Paper-text.html
+    tests/fixtures/synthetic_reference_conversation.json \
+    --html tmp/synthetic-export-text.html
 """
 
 from __future__ import annotations

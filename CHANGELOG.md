@@ -1,5 +1,78 @@
 # Changelog
 
+## 2026-03-27 - 0.5.7 - Initial Public Release
+
+### Tests
+
+- Replaced the previous local/private reference fixture dependency with a committed synthetic conversation fixture under `tests/fixtures/`.
+- Updated regression tests to load shared fixture paths from `tests/sample_data.py` instead of relying on workstation-specific `tmp/` files.
+- Sanitized the committed synthetic fixture so personal/profile identifiers are removed while preserving realistic conversation structure and citation behavior.
+
+### Maintenance
+
+- Scrubbed lingering `tmp/PA-Paper` example paths from test helper scripts and replaced them with neutral synthetic fixture examples.
+
+### Release
+
+- Set the package version to `0.5.7` for the initial public release complementary to the `LogGPT` macOS Safari extension.
+
+## 2026-03-22 — 0.7.0
+
+### Refactor
+
+- Reworked the transcript pipeline around a typed Pydantic render model.
+- Changed Markdown and HTML outputs to render assistant turns with per-turn `Tools Used` and `References` collapsible sections.
+- Attached internal/tool activity to the next visible assistant turn instead of emitting it as peer transcript content.
+- Added local media bundle awareness so rendered transcripts can prefer files from `<stem>/media/` when a sibling media manifest is present.
+
+### Schema Handling
+
+- Added schema diagnostics for unexpected OpenAI export shapes and content types.
+- Added automatic schema exception reports written next to output files when drift is detected.
+- Updated CLI warnings to guide users toward filing GitHub issues with redacted samples for unsupported schema variants.
+- Added optional duplicate-safe GitHub issue filing via `gh` for schema drift reports.
+
+### Packaging
+
+- Aligned package metadata around the MIT license.
+- Added the `markdown` dependency for HTML rendering.
+- Updated README positioning for Markdown/HTML-first public release behavior.
+- Made `pyproject.toml` the authoritative packaging source while keeping `setup.py` as a minimal compatibility shim.
+
+### Documentation
+
+- Updated README coverage for schema issue filing, local media bundle consumption, and current known gaps.
+- Added `docs/media-bundle-contract.md` to document the shared `LogGPT Plus` and `extract-chat` media layout.
+
+## 2025-11-20 — 1.1.4
+
+### Enhancements
+
+- Added `-V/--version` flag and display of version in CLI help output.
+- Clarified README/docs with the new version flag.
+
+### Packaging
+
+- Bumped project version to 1.1.4 in `pyproject.toml`, `setup.py`, and package metadata.
+
+## 2025-11-06
+
+### Bug Fixes
+
+- Coerce numeric `async_status` values to strings during `Conversation` schema validation to match upstream exports.
+- Reworked turn traversal to use iterative stacks, preventing recursion depth errors on deeply nested conversations.
+- Added regression tests covering numeric `async_status` parsing and deep conversation traversal.
+
+## 2025-10-18
+
+### Reference Pipeline Cleanup
+
+- Introduced a **canonical reference payload builder** that deduplicates metadata once and feeds the numbering/backlink data to every formatter.
+- Switched Markdown, HTML, and Jekyll formatters to consume the shared payload so they now emit identical reference ordering and alphabetical backlink labels (`a^`, `b^`, ...).
+- Centralized stripping of assistant-provided `**Sources:**` blocks so they no longer leak into Markdown/HTML exports and Jekyll sections.
+- Updated the Jekyll exporter to drop the reference audit alongside the generated bundle, keeping diagnostics with each run.
+- Added targeted tests covering the payload builder and formatter parity.
+
 ## 2025-09-28
 
 ### Major Improvements
@@ -16,7 +89,7 @@
   - Preserved Unicode characters in other contexts while ensuring clean Jekyll output
   - Updated dependencies to include `unicodefix @ git+https://github.com/unixwzrd/UnicodeFix.git`
 
-- **Reference Display Improvements**: 
+- **Reference Display Improvements**:
   - Implemented `reference_title` field that prioritizes `source_label` when available, falling back to `title`
   - Updated all formatters and processors to use `reference_title` for consistent display
   - Added pipe character escaping (`|` → `\|`) specifically for reference titles to prevent Jekyll table interpretation

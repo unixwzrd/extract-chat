@@ -1,3 +1,4 @@
 pydantic>=2
 ftfy>=6.2
+markdown>=3.6
 unicodefix @ git+https://github.com/unixwzrd/UnicodeFix.git
