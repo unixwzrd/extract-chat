@@ -6,9 +6,7 @@ from subprocess import CompletedProcess
 from extract_chat import cli
 from extract_chat.processors.schema_diagnostics import analyze_raw_conversation
 from extract_chat.schemas.render_models import SchemaDiagnostics, SchemaWarning
-
-SAMPLE_PATH = Path("tmp/PA-Paper/chatgpt_convo_686ab2a1-6578-8003-b0e6-79b76323e002.json")
-TURN_ID = "c3df4f37-ab12-4ab6-a810-6b687a759b83"
+from tests.sample_data import SAMPLE_PATH, TURN_ID
 
 
 def run_cli(arguments: list[str]) -> None:

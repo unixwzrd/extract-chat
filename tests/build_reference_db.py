@@ -4,10 +4,10 @@
 Usage
 -----
 python tests/build_reference_db.py \
-    tmp/PA-Paper/chatgpt_convo_....json \
-    tmp/PA-Paper/reference_inventory.sqlite \
-    --html tmp/PA-Paper/OpenAI-PA-Paper-text.html \
-           tmp/PA-Paper/OpenAI-PA-Paper-references.html
+    tests/fixtures/synthetic_reference_conversation.json \
+    tmp/reference_inventory.sqlite \
+    --html tmp/synthetic-export-text.html \
+           tmp/synthetic-export-references.html
 """
 
 from __future__ import annotations

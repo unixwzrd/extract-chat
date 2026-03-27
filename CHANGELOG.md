@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-03-27 - 0.5.7 - Initial Public Release
+
+### Tests
+
+- Replaced the previous local/private reference fixture dependency with a committed synthetic conversation fixture under `tests/fixtures/`.
+- Updated regression tests to load shared fixture paths from `tests/sample_data.py` instead of relying on workstation-specific `tmp/` files.
+- Sanitized the committed synthetic fixture so personal/profile identifiers are removed while preserving realistic conversation structure and citation behavior.
+
+### Maintenance
+
+- Scrubbed lingering `tmp/PA-Paper` example paths from test helper scripts and replaced them with neutral synthetic fixture examples.
+
+### Release
+
+- Set the package version to `0.5.7` for the initial public release complementary to the `LogGPT` macOS Safari extension.
+
 ## 2026-03-22 — 0.7.0
 
 ### Refactor

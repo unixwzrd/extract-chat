@@ -1,6 +1,5 @@
 import json
 import re
-from pathlib import Path
 from typing import Any, Tuple
 
 from extract_chat.context.document_context import DocumentContext
@@ -9,9 +8,8 @@ from extract_chat.processors.citation_processor import (
     _reference_identity_from_fields,
 )
 from extract_chat.schemas.conversation import Conversation
+from tests.sample_data import SAMPLE_PATH, TURN_ID
 
-TURN_ID = "c3df4f37-ab12-4ab6-a810-6b687a759b83"
-SAMPLE_PATH = Path("tmp/PA-Paper/chatgpt_convo_686ab2a1-6578-8003-b0e6-79b76323e002.json")
 MARKER_PATTERN = re.compile(r"【(\d+)†L(\d+)-L(\d+)】")
 
 
@@ -80,12 +78,9 @@ def test_citation_processor_merges_metadata():
     entry = refs_by_key[key]
     assert entry["turn_id"] == 1
     assert entry["unique_id"].startswith("1_")
-    assert entry["title"] == (
-        "The Impact of Parental Alienating Behaviours on the Mental Health of Adults "
-        "Alienated in Childhood - PMC"
-    )
-    assert entry["url"].startswith("https://pmc.ncbi.nlm.nih.gov/articles/PMC9026878/")
-    assert entry["attribution"] == "pmc.ncbi.nlm.nih.gov"
+    assert entry["title"] == "Synthetic Launch Planning Article"
+    assert entry["url"].startswith("https://example.test/articles/launch-planning")
+    assert entry["attribution"] == "example.test"
 
     metadata = turn.message.metadata
     citation_keys = set()

@@ -1,6 +1,5 @@
 import json
 import re
-from pathlib import Path
 
 from extract_chat.context.document_context import DocumentContext
 from extract_chat.formatters.html_formatter import HTMLFormatter
@@ -14,9 +13,7 @@ from extract_chat.processors.reference_processing.reference_utils import (
     replace_inline_citation_markers,
 )
 from extract_chat.schemas.conversation import Conversation
-
-SAMPLE_PATH = Path("tmp/PA-Paper/chatgpt_convo_686ab2a1-6578-8003-b0e6-79b76323e002.json")
-TURN_ID = "c3df4f37-ab12-4ab6-a810-6b687a759b83"
+from tests.sample_data import SAMPLE_PATH, TURN_ID
 
 
 def _load_conversation() -> Conversation:

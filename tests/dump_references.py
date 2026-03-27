@@ -2,7 +2,7 @@
 """Quick utility to inspect resolved reference metadata for a conversation export.
 
 Usage:
-    python tests/dump_references.py tmp/PA-Paper/chatgpt_convo_...json
+    python tests/dump_references.py tests/fixtures/synthetic_reference_conversation.json
 
 Outputs one line per unique citation number showing the resolved title, the
 source label captured from the “Sources:” block (if present), and the URL host.

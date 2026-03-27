@@ -6,7 +6,7 @@ The script looks for a `<strong>Sources:</strong>` marker and returns each
 
 Example
 -------
-python tests/extract_openai_sources.py tmp/PA-Paper/OpenAI-PA-Paper-text.html
+python tests/extract_openai_sources.py tmp/synthetic-export-text.html
 """
 
 from __future__ import annotations
