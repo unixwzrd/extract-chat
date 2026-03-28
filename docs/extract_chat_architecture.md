@@ -1,6 +1,6 @@
-# Extract Chat V2 Architecture
+# extract-chat Architecture
 
-This document describes the internals of the V2 pipeline that powers the
+This document describes the internal pipeline that powers the
 `extract-chat` CLI. The design replaces the original ad-hoc scripts with a
 modular processor + formatter stack that supports Markdown, HTML, and Jekyll
 outputs.
@@ -97,5 +97,5 @@ extract-chat export.json \
 ## Testing
 
 `pytest` covers the processor, reference grouping, CLI flows, and the Jekyll
-exporter. The tests rely on sample fixtures in `tmp/PA-Paper/`—keep those files
-available when evolving the pipeline.
+exporter. The committed fixtures used by tests live under `tests/fixtures/` and
+should remain synthetic or redacted when evolving the pipeline.
