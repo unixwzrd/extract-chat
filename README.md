@@ -1,8 +1,94 @@
 # extract-chat
 
+![extract-chat](docs/images/extract-chat-banner.png)
+
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Pydantic](https://img.shields.io/badge/Pydantic-2.0%2B-red)](#) [![UnicodeFix](https://img.shields.io/badge/UnicodeFix-Integrated-orange)](#)
 
+- [extract-chat](#extract-chat)
+  - [Works with LogGPT](#works-with-loggpt)
+  - [Where this fits (AI / ML workflows)](#where-this-fits-ai--ml-workflows)
+  - [Typical Use Cases](#typical-use-cases)
+  - [What It Produces](#what-it-produces)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+  - [Documentation](#documentation)
+  - [Python API](#python-api)
+  - [Known Gaps](#known-gaps)
+  - [Development](#development)
+  - [Contributing](#contributing)
+  - [Support This and Other Projects](#support-this-and-other-projects)
+  - [Copyright](#copyright)
+  - [Changelog](#changelog)
+  - [License](#license)
+
+
 `extract-chat` converts OpenAI and ChatGPT exported conversation JSON into readable Markdown or HTML conversation logs, with preserved citation links, schema diagnostics, and collapsible tool activity.
+
+If you've ever downloaded your ChatGPT history and opened it thinking:
+
+> “What am I supposed to do with this?”
+
+This tool fixes that.
+
+It converts raw exports into:
+
+- 📄 readable Markdown (notes, archives, documentation)
+- 🌐 clean HTML (browse or share)
+- 🧱 structured content (Jekyll pages)
+- 🧠 AI-ready data (for embeddings, RAG, and agents)
+
+And it preserves things most tools lose:
+
+- references and citations  
+- tool calls and hidden assistant activity  
+- system prompts and reusable context  
+
+## Works with LogGPT
+
+[`LogGPT`](https://github.com/unixwzrd/LogGPT) (also on the [Mac App Store](https://apps.apple.com/us/app/loggpt/id6743342693?mt=12)) downloads your ChatGPT conversations as JSON.
+
+`extract-chat` is the next step.
+
+**Typical workflow:**
+
+1. Use LogGPT to download your conversation  
+2. Run `extract-chat` on the JSON  
+3. Get a clean, readable, portable transcript  
+
+With **LogGPT Plus**, you can also download all media (images, audio, files), and `extract-chat` will automatically link that media into the output.
+
+Together, they form a complete local archive + processing pipeline for ChatGPT data.
+
+## Where this fits (AI / ML workflows)
+
+This is not just a formatter—it’s a bridge between ChatGPT and real systems.
+
+You can use `extract-chat` with:
+
+- local RAG pipelines  
+- vector databases  
+- agent frameworks (OpenClaw, Hermes, custom agents)  
+- research and forensic workflows  
+
+It enables:
+
+- conversation chunking for embeddings  
+- replayable context for agents  
+- structured memory ingestion  
+- cross-session continuity  
+
+Think of it as:
+
+> **ChatGPT → structured data → usable intelligence**
+
+## Typical Use Cases
+
+- 📚 Archive ChatGPT conversations into readable documents  
+- 🧠 Feed conversations into embeddings / vector databases  
+- ✍️ Publish long-form content (Jekyll, blogs, docs)  
+- 🔍 Preserve references, citations, and tool activity for analysis  
+- 🔁 Reuse prior conversations for continuity  
+- ⚖️ Maintain structured logs for research or forensic workflows  
 
 ## What It Produces
 
@@ -16,19 +102,44 @@
 
 Requires Python 3.10+.
 
+If you just want to use the tool, the easiest option is to install it directly from GitHub:
+
 ```bash
+pip install "git+https://github.com/unixwzrd/extract-chat.git"
+```
+
+If you want a specific release:
+
+```bash
+pip install "git+https://github.com/unixwzrd/extract-chat.git@v0.5.8"
+```
+
+If you prefer to clone the repository first:
+
+```bash
+git clone https://github.com/unixwzrd/extract-chat.git
+cd extract-chat
 pip install .
 ```
 
-For development:
+For development, clone the repository and install in editable mode:
 
 ```bash
+git clone https://github.com/unixwzrd/extract-chat.git
+cd extract-chat
 pip install -e .
+```
+
+After an editable install, run the test suite before opening a pull request or publishing changes:
+
+```bash
+pytest -q
 ```
 
 Notes:
 
-- The package import is `extract_chat`.
+- Most people will use the command-line tool `extract-chat`.
+- The Python package name is `extract_chat` if you do want to import it from code.
 - The CLI entry point is `extract-chat`.
 - HTML rendering uses the `markdown` package.
 - Unicode normalization uses [`UnicodeFix`](https://github.com/unixwzrd/UnicodeFix), currently installed from GitHub.
@@ -63,129 +174,35 @@ Batch validation run:
 ```bash
 extract-chat \
   --batch-dir tmp/consolidated/JSON \
-  --output tmp/batch-validate-20260318-archive-run \
+  --output tmp/batch-validate-run \
   --batch-formats both
 ```
 
-## CLI
+## Documentation
 
-Common options:
+The README stays intentionally high-level. Use the docs below for detail:
 
-- `-f, --format`: `markdown` (default), `html`, or `jekyll`
-- `-o, --output`: output file for Markdown/HTML, or output directory for Jekyll
-- `-c, --css-file`: custom CSS file for HTML output
-- `-v, --verbose`: enable debug logging
-- `--log-file`: write logs to a file
-- `--force`: overwrite existing files
-- `--schema-warning-detail`: `summary` (default) or `full`
-- `--media-index`: write a media inventory JSON file under a conversation-named subdirectory next to the output
-- `--gh-file-schema-issue`: use `gh` to file schema-drift issues automatically with duplicate detection
-- `--gh-repo`: override the GitHub repo used for automatic schema issue filing
-- `-V, --version`: show the installed version
+- [docs/extract_chat.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat.md) for command-line reference and option details
+- [docs/usage_examples.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/usage_examples.md) for examples, workflows, and common use cases
+- [docs/api.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/api.md) for Python/library usage
+- [docs/extract_chat_architecture.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat_architecture.md) for internal pipeline details
+- [docs/media-bundle-contract.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/media-bundle-contract.md) for local media bundle integration
 
-Batch options:
+## Python API
 
-- `--batch-dir`: directory of JSON files to process in one validation run
-- `--batch-formats`: `both` (default), `markdown`, or `html`
-- In batch mode, `--output` is the run root directory and the tool creates `markdown/`, `html/`, and `reports/` under it
+`extract-chat` can also be used from Python, but the CLI is still the primary public interface.
 
-Jekyll-specific options:
+If you want programmatic usage, see:
 
-- `--jekyll-turn-id`: assistant turn id to export
-- `--jekyll-base-slug`: base slug for generated pages
-- `--jekyll-layout`: front matter layout value
-- `--jekyll-reference-title`: title for the references page
+- [docs/api.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/api.md) for loading JSON, building a render document, rendering Markdown/HTML, and exporting Jekyll pages
+- [docs/extract_chat_architecture.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat_architecture.md) for internal pipeline details
 
-## Schema Diagnostics
+The short version is:
 
-`extract-chat` is Pydantic-first and tries to keep working when OpenAI export JSON drifts.
-
-When the loader sees unexpected keys, content types, or incompatible shapes, it will:
-
-- emit CLI warnings
-- continue with fallback handling where possible
-- write a schema exception report next to the output when warnings were raised
-
-The report includes:
-
-- package version
-- encountered content types
-- unknown top-level keys
-- structured warnings with paths and representative turn ids
-
-If you hit a schema variant that renders poorly or fails to parse, open a GitHub issue and attach:
-
-1. the generated schema exception report
-2. a redacted sample JSON fragment if possible
-
-The CLI prints a prefilled GitHub issue URL for schema drift, and the generated schema exception report includes the same `issue_url` so reporters can jump straight into the repository issue tracker with the warning codes and content types pre-populated.
-
-When warnings are raised, the tool also writes a `*-schema-issue.md` issue bundle next to the schema report. That file is designed to be uploaded or pasted into a GitHub issue without retyping the schema details from the terminal.
-
-By default, schema warnings are summarized on stderr. Use `--schema-warning-detail full` if you want every warning entry printed to the terminal.
-
-If you have the GitHub CLI installed and authenticated, you can opt into automatic issue filing:
-
-```bash
-extract-chat path/to/conversation.json \
-  -o out.md \
-  --gh-file-schema-issue
-```
-
-Duplicate suppression is signature-based, so the tool checks open issues first and skips creating a new issue when a matching schema signature already exists.
-
-## Media Inventory
-
-Use `--media-index` to generate a `media-index.json` file under a subdirectory named after the conversation stem. This does not download remote media; it inventories known media pointers, URLs, asset ids, and related attachment fields so a later pass can fetch them or link them into Markdown/HTML.
-
-If a sibling extracted media bundle exists using the shared `LogGPT Plus` contract:
-
-- `<stem>/media/`
-- optional `<stem>/media-manifest.json`
-
-then `extract-chat` will prefer local media links in the rendered `Media` section for each turn while preserving the original remote pointer metadata.
-
-The bundle contract is documented in [`docs/media-bundle-contract.md`](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/media-bundle-contract.md).
-
-## Batch Validation Reports
-
-Batch mode writes:
-
-- `reports/summary.md` for human review
-- `reports/results.csv` for machine analysis
-
-The summary includes:
-
-- total discovered files
-- markdown/html success and failure counts
-- files with schema warnings
-- files with schema exception reports
-- top warning codes
-- top failure types
-
-This is intended for validating mixed-era archives without writing back into the source tree.
-
-## Citation Behavior
-
-- Inline OpenAI export citation markers are replaced with superscript links in assistant text.
-- Each assistant turn renders its own `References` section.
-- References include backlinks to the citation site within that same assistant turn.
-- Assistant-authored `**Sources:**` blocks are stripped from the primary Markdown and HTML transcript outputs so the canonical references come only from processed metadata.
-- Jekyll export keeps a references page and a reference audit file for sectioned content.
-
-## Output Model
-
-Primary Markdown and HTML outputs follow this structure:
-
-1. document metadata
-2. optional `System Context`
-3. visible transcript turns
-4. per assistant turn:
-   - `Tools Used`
-   - assistant response body
-   - `References`
-
-This keeps the transcript readable while preserving provenance and research metadata.
+- load with `Conversation`
+- process with `TurnProcessorV2`
+- render with `MarkdownFormatter` or `HTMLFormatter`
+- use `JekyllTurnExporter` if you want one assistant turn exported as Jekyll pages
 
 ## Known Gaps
 
@@ -194,15 +211,18 @@ This keeps the transcript readable while preserving provenance and research meta
 - Chunking/vector export is still planned, not implemented.
 - The test suite still emits Pydantic v2 deprecation warnings from older schema modules that have not been migrated to `ConfigDict` yet.
 
-## Project Notes
-
-- `tmp/unified-output/` and `tmp/jekyll-pages-fix10/` contain reference outputs used as behavior guides, especially for citation integrity.
-- Jekyll remains supported, but Markdown and HTML are the primary public outputs.
-- `LogGPT` / `LogGPT Plus` integration now uses a shared naming contract for JSON and optional media bundles.
-
 ## Development
 
-Run tests with:
+Common development workflow:
+
+```bash
+git clone https://github.com/unixwzrd/extract-chat.git
+cd extract-chat
+pip install -e .
+pytest -q
+```
+
+Run tests manually with:
 
 ```bash
 pytest -q
@@ -218,6 +238,51 @@ The tests cover:
 - CLI execution
 - Jekyll export wiring
 
+For the fuller command reference and deeper examples, use:
+
+- [docs/extract_chat.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat.md)
+- [docs/usage_examples.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/usage_examples.md)
+
+## Contributing
+
+Issues and pull requests are welcome.
+
+If you are contributing code:
+
+```bash
+git clone https://github.com/unixwzrd/extract-chat.git
+cd extract-chat
+pip install -e .
+pytest -q
+```
+
+Please keep committed fixtures synthetic or redacted, and include tests when you change processor, formatter, or CLI behavior.
+
+## Support This and Other Projects
+
+If UnicodeFix (or my other projects) saved your bacon or made you smile, please consider fueling my caffeine habit and indie dev obsession...
+
+- [Patreon](https://patreon.com/unixwzrd)
+- [Ko-Fi](https://ko-fi.com/unixwzrd)
+- [Buy Me a Coffee](https://buymeacoffee.com/unixwzrd)
+
+Quite a bit of effort goes into preparing these releases. *One coffee = one more tool released to the wild...*🤔
+
+Thank you for keeping solo development alive!
+
+## Copyright
+
+Copyright 2026  
+[unixwzrd@unixwzrd.ai](mailto:unixwzrd@unixwzrd.ai)
+
+## Changelog
+
+**See [CHANGELOG.md](CHANGELOG.md) for the latest drop.**
+
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[MIT License](LICENSE)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.

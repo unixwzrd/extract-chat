@@ -1,4 +1,12 @@
-# extract-chat CLI
+# extract-chat CLI Reference
+
+- [extract-chat CLI Reference](#extract-chat-cli-reference)
+  - [Quick Start](#quick-start)
+  - [CLI Options](#cli-options)
+  - [Citations](#citations)
+  - [Related Documentation](#related-documentation)
+  - [Development Notes](#development-notes)
+  - [Navigation](#navigation)
 
 The `extract-chat` command converts a saved ChatGPT conversation export (.json) into
 Markdown, HTML, or a bundle of Jekyll section pages while preserving turn order,
@@ -35,42 +43,6 @@ extract-chat conversation.json \
 | `--jekyll-layout` | Front-matter layout for Jekyll pages (default `page`). |
 | `--jekyll-reference-title` | Title used on the generated references page (default `References`). |
 
-## Architecture Overview
-
-```
-JSON Export
-   │
-   ▼
-TurnProcessorV2
-   │   └─ groups turns chronologically, preserves tool calls & citations
-   ▼
-FormatterAdapter
-   │   └─ presents processed blocks to the selected formatter
-   ▼
-Reference Payload Builder
-   │   └─ deduplicates references & assigns alphabetical backlinks
-   ▼
-Formatter (Markdown | HTML | JekyllTurnExporter)
-   │
-   ▼
-Rendered Output
-```
-
-Key components live under `src/extract_chat/`:
-
-- `processes/turn_processor.py` – traverses the conversation mapping and produces
-  structured blocks for each turn.
-- `processors/citation_processor.py` – merges citation metadata and assigns
-  stable sequence numbers.
-- `processors/reference_processing/reference_utils.py` – shared helpers and the
-  canonical reference payload builder consumed by every formatter.
-- `formatters/markdown_formatter.py` – renders Markdown output with bidirectional
-  references.
-- `formatters/html_formatter.py` – mirrors the Markdown references and supports
-  custom CSS injection.
-- `formatters/jekyll_exporter.py` – splits a long-form assistant response into
-  Jekyll-ready section pages plus a references page, keeping cross-page links intact.
-
 ## Citations
 
 Citations in the source JSON (`citations` and `content_references`) are merged into
@@ -80,9 +52,23 @@ assigns alphabetical backlinks (`a^`, `b^`, …) to every occurrence. Assistant-
 `**Sources:**` blocks are stripped before rendering so only canonical metadata reaches
 Markdown, HTML, or Jekyll outputs.
 
+## Related Documentation
+
+- [README.md](/Users/mps/projects/AI-PROJECTS/extract-chat/README.md) – project overview and install paths
+- [usage_examples.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/usage_examples.md) – practical workflows and examples
+- [api.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/api.md) – Python/library usage
+- [extract_chat_architecture.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat_architecture.md) – internal pipeline and formatter architecture
+- [media-bundle-contract.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/media-bundle-contract.md) – shared media bundle layout used with `LogGPT Plus`
+
 ## Development Notes
 
-- Run the full test suite: `pytest`
-- Ensure the sample fixtures under `tmp/PA-Paper/` remain available if modifying
-tests that exercise the Jekyll export flow.
+- Run the full test suite: `pytest -q`
+- Committed fixtures used by tests live under `tests/fixtures/` and should remain synthetic or redacted.
 - The CLI entry point is registered in `pyproject.toml` under `[project.scripts]`.
+
+## Navigation
+
+- [Back to README](/Users/mps/projects/AI-PROJECTS/extract-chat/README.md)
+- [Usage Examples](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/usage_examples.md)
+- [Python API](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/api.md)
+- [Architecture Guide](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat_architecture.md)
