@@ -17,6 +17,10 @@ dependencies = [
   "unicodefix @ git+https://github.com/unixwzrd/UnicodeFix.git",
 ]
 
+[project.optional-dependencies]
+mac-app = ["pyinstaller>=6.0"]
+token-counting = ["tiktoken>=0.7"]
+
 [project.scripts]
 extract-chat = "extract_chat.cli:main"
 

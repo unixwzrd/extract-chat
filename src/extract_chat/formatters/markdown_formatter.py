@@ -167,6 +167,11 @@ class MarkdownFormatter(BaseFormatter):
 
         return lines
 
+    def render_turn(self, turn: RenderTurn) -> str:
+        """Render one complete turn for chunking and other structured exports."""
+
+        return self._normalize_text("\n".join(self._render_turn(turn)).rstrip() + "\n")
+
     def _render_tools_used(self, tools: list[ToolActivityItem]) -> str:
         lines = ["<details>", "<summary>Tools Used</summary>", ""]
         for item in tools:

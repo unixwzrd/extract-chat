@@ -158,6 +158,29 @@ HTML:
 extract-chat path/to/conversation.json --format html --output out.html
 ```
 
+Complete archive extraction with canonical `start--end--title` names:
+
+```bash
+extract-chat conversation.json \
+  --output-dir exported \
+  --format both \
+  --emit-tsv \
+  --chunk
+```
+
+The input may also be a LogGPT+ ZIP. Downloaded artifacts are copied to
+`exported/<stem>/artifacts/`, and Markdown/HTML links prefer those local files.
+Embedded HTML tables can be emitted as TSV files under `artifacts/derived/`.
+
+Continuity chunks default to turn boundaries with one turn of overlap. Every
+final Markdown part is measured after headers and overlap are added and may
+never exceed 524,288 UTF-8 bytes. The optional controls are
+`--chunk-strategy`, `--chunk-max-bytes`, `--chunk-max-lines`,
+`--chunk-max-tokens`, and one of the turn/line/byte overlap flags.
+
+The native macOS front end lives in `macos/ExtractChatApp`; see
+`macos/README.md` for development and helper-bundling details.
+
 Jekyll bundle:
 
 ```bash

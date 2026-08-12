@@ -9,8 +9,10 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -24,6 +26,8 @@ from urllib.parse import urlparse, parse_qs
 from pydantic import ValidationError
 
 from extract_chat import __version__
+from extract_chat.archive import extract_archive
+from extract_chat.chunking import ChunkOptions, build_markdown_chunks, write_chunk_bundle
 from extract_chat.context.document_context import DocumentContext
 from extract_chat.formatters import HTMLFormatter, MarkdownFormatter
 from extract_chat.formatters.jekyll_formatter import JekyllTurnExporter
@@ -32,6 +36,8 @@ from extract_chat.processors.schema_normalization import normalize_raw_conversat
 from extract_chat.processors.turn_processor import TurnProcessorV2
 from extract_chat.schemas.conversation import Conversation
 from extract_chat.schemas.render_models import RenderDocument, SchemaDiagnostics
+from extract_chat.naming import canonical_conversation_stem
+from extract_chat.tables import write_embedded_tables
 
 logging.basicConfig(
     level=logging.INFO,
@@ -109,6 +115,7 @@ def _load_media_manifest_entries(input_path: Path) -> dict[str, dict[str, Any]]:
     manifest_paths = [
         base_dir / "media-manifest.json",
         media_dir / "media-manifest.json",
+        base_dir / "artifact-manifest.json",
     ]
     entries: dict[str, dict[str, Any]] = {}
 
@@ -121,7 +128,7 @@ def _load_media_manifest_entries(input_path: Path) -> dict[str, dict[str, Any]]:
             logger.warning("Ignoring unreadable media manifest: %s", manifest_path)
             continue
 
-        items = payload.get("items", []) if isinstance(payload, dict) else []
+        items = (payload.get("items") or payload.get("artifacts") or []) if isinstance(payload, dict) else []
         for item in items:
             if not isinstance(item, dict):
                 continue
@@ -139,7 +146,8 @@ def _load_media_manifest_entries(input_path: Path) -> dict[str, dict[str, Any]]:
                     relative_path = f"media/{saved_filename}"
             if not relative_path:
                 continue
-            absolute_path = base_dir / str(relative_path)
+            relative = Path(str(relative_path))
+            absolute_path = (base_dir.parent / relative) if relative.parts and relative.parts[0] == base_dir.name else (base_dir / relative)
             if not absolute_path.exists():
                 continue
             for identifier in identifiers:
@@ -152,6 +160,23 @@ def _load_media_manifest_entries(input_path: Path) -> dict[str, dict[str, Any]]:
                     "display_name": item.get("original_filename") or item.get("saved_filename") or absolute_path.name,
                     "original_url": item.get("source_url") or item.get("original_url"),
                 }
+
+    artifacts_dir = base_dir / "artifacts"
+    if artifacts_dir.exists():
+        for media_file in artifacts_dir.rglob("*"):
+            if not media_file.is_file() or media_file.name.endswith("manifest.json"):
+                continue
+            identifier = _normalize_media_identifier(media_file.stem) or media_file.stem
+            entries.setdefault(
+                identifier,
+                {
+                    "canonical_id": identifier,
+                    "absolute_path": media_file,
+                    "relative_path": str(media_file.relative_to(base_dir)),
+                    "display_name": media_file.name,
+                    "original_url": None,
+                },
+            )
 
     if media_dir.exists():
         for media_file in media_dir.iterdir():
@@ -191,7 +216,20 @@ def _attach_local_media_links(
                 match = manifest_entries.get(identifier)
                 if not match:
                     continue
-                relative_link = os.path.relpath(match["absolute_path"], output_parent)
+                asset_path = Path(match["absolute_path"])
+                if output_path is not None and output_path.stem != input_path.stem and asset_path.parent != output_parent:
+                    category = "derived"
+                    source_parts = Path(match["relative_path"]).parts
+                    if "generated" in source_parts:
+                        category = "generated"
+                    elif "uploaded" in source_parts:
+                        category = "uploaded"
+                    destination = output_parent / output_path.stem / "artifacts" / category / asset_path.name
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    if asset_path.resolve() != destination.resolve():
+                        shutil.copy2(asset_path, destination)
+                    asset_path = destination
+                relative_link = os.path.relpath(asset_path, output_parent)
                 if item.url:
                     item.metadata["original_url"] = item.url
                 item.metadata["canonical_id"] = match["canonical_id"]
@@ -200,6 +238,26 @@ def _attach_local_media_links(
                 item.url = relative_link
                 item.label = match["display_name"]
                 break
+
+
+def _copy_artifact_package(input_path: Path, destination: Path, *, force: bool) -> list[Path]:
+    """Copy downloaded archive artifacts beside rendered output without flattening categories."""
+
+    source_root = input_path.parent / input_path.stem
+    if not source_root.exists():
+        return []
+    copied: list[Path] = []
+    for source in source_root.rglob("*"):
+        if not source.is_file():
+            continue
+        relative = source.relative_to(source_root)
+        target = destination / relative
+        if target.exists() and not force:
+            raise RuntimeError(f"Refusing to overwrite existing artifact: {target} (use --force)")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        copied.append(target)
+    return copied
 
 
 def _slugify(value: str | None) -> str:
@@ -577,6 +635,7 @@ def export_file(
     jekyll_base_slug: str | None = None,
     jekyll_layout: str = "page",
     jekyll_reference_title: str = "References",
+    chunk_options: ChunkOptions | None = None,
 ) -> ExportResult:
     start = time.perf_counter()
     input_path = Path(input_file)
@@ -688,6 +747,13 @@ def export_file(
             output_path.write_text(output_content, encoding="utf-8")
             logger.info("Wrote %s", output_path)
 
+            if format_name == "markdown" and chunk_options is not None:
+                chunk_stem = output_path.stem
+                bundle = build_markdown_chunks(document, stem=chunk_stem, options=chunk_options)
+                chunk_dir = output_path.parent / f"{chunk_stem}-chunks"
+                write_chunk_bundle(bundle, chunk_dir, force=force)
+                logger.info("Wrote %d continuity chunks to %s", len(bundle.chunks), chunk_dir)
+
             schema_report_path = None
             if diagnostics.has_warnings:
                 schema_report_path = _schema_report_path(
@@ -760,7 +826,7 @@ def _ensure_safe_batch_output(source_dir: Path, output_root: Path) -> Path:
 
 def _discover_json_files(batch_dir: Path) -> list[Path]:
     return sorted(
-        path for path in batch_dir.iterdir()
+        path for path in batch_dir.rglob("*.json")
         if path.is_file() and path.suffix.lower() == ".json"
     )
 
@@ -959,7 +1025,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-f",
         "--format",
-        choices=["markdown", "html", "jekyll"],
+        choices=["markdown", "html", "both", "jekyll"],
         default="markdown",
         help="Output format (default: markdown)",
     )
@@ -974,6 +1040,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--log-file", help="Optional path to write logs to a file.")
     parser.add_argument("--force", action="store_true", help="Force overwrite existing files.")
+    parser.add_argument("--output-dir", help="Destination directory; output names use start--end--title.")
+    parser.add_argument("--artifact-dir", help="Artifact directory (default: OUTPUT_DIR/<conversation-stem>).")
+    parser.add_argument("--emit-tsv", action="store_true", help="Convert embedded HTML tables to TSV artifacts.")
+    parser.add_argument("--chunk", action="store_true", help="Write upload-safe Markdown continuity chunks.")
+    parser.add_argument("--chunk-strategy", choices=["hybrid", "turn", "heading", "paragraph", "fixed"], default="hybrid")
+    parser.add_argument("--chunk-max-bytes", type=int, default=512 * 1024)
+    parser.add_argument("--chunk-max-lines", type=int)
+    parser.add_argument("--chunk-max-tokens", type=int)
+    parser.add_argument("--chunk-token-encoding", default="o200k_base")
+    parser.add_argument(
+        "--chunk-overlap-turns",
+        type=int,
+        help="Turn overlap (default: 1 unless a line or byte overlap is selected).",
+    )
+    parser.add_argument("--chunk-overlap-lines", type=int, default=0)
+    parser.add_argument("--chunk-overlap-bytes", type=int, default=0)
     parser.add_argument(
         "--schema-warning-detail",
         choices=["summary", "full"],
@@ -1050,24 +1132,75 @@ def main() -> None:
         logger.error("Input file not found: %s", args.input_file)
         sys.exit(1)
 
-    result = export_file(
-        input_file=args.input_file,
-        format_name=args.format,
-        output=args.output,
-        css_file=args.css_file,
-            verbose=args.verbose,
-            force=args.force,
-            log_file=args.log_file,
-            schema_warning_detail=args.schema_warning_detail,
-            media_index=args.media_index,
-            gh_file_schema_issue=args.gh_file_schema_issue,
-            gh_repo=args.gh_repo,
-            jekyll_turn_id=args.jekyll_turn_id,
-        jekyll_base_slug=args.jekyll_base_slug,
-        jekyll_layout=args.jekyll_layout,
-        jekyll_reference_title=args.jekyll_reference_title,
-    )
-    if result.status == "failed":
+    chunk_options = None
+    if args.chunk:
+        overlap_turns = args.chunk_overlap_turns
+        if overlap_turns is None:
+            overlap_turns = 0 if (args.chunk_overlap_lines or args.chunk_overlap_bytes) else 1
+        chunk_options = ChunkOptions(
+            strategy=args.chunk_strategy,
+            max_bytes=args.chunk_max_bytes,
+            max_lines=args.chunk_max_lines,
+            max_tokens=args.chunk_max_tokens,
+            token_encoding=args.chunk_token_encoding,
+            overlap_turns=overlap_turns,
+            overlap_lines=args.chunk_overlap_lines,
+            overlap_bytes=args.chunk_overlap_bytes,
+        )
+
+    def run(source: str) -> list[ExportResult]:
+        output_stem = Path(source).stem
+        if args.output_dir:
+            conversation, _ = _load_conversation(source, verbose=False, schema_warning_detail="summary")
+            output_stem = canonical_conversation_stem(conversation)
+        destination_dir = Path(args.output_dir).expanduser() if args.output_dir else None
+        formats = ["markdown", "html"] if args.format == "both" else [args.format]
+        results: list[ExportResult] = []
+        for format_name in formats:
+            output = args.output
+            if destination_dir is not None:
+                extension = "md" if format_name == "markdown" else "html"
+                output = str(destination_dir / f"{output_stem}.{extension}")
+            results.append(
+                export_file(
+                    input_file=source,
+                    format_name=format_name,
+                    output=output,
+                    css_file=args.css_file,
+                    verbose=args.verbose,
+                    force=args.force,
+                    log_file=args.log_file,
+                    schema_warning_detail=args.schema_warning_detail,
+                    media_index=args.media_index,
+                    gh_file_schema_issue=args.gh_file_schema_issue,
+                    gh_repo=args.gh_repo,
+                    jekyll_turn_id=args.jekyll_turn_id,
+                    jekyll_base_slug=args.jekyll_base_slug,
+                    jekyll_layout=args.jekyll_layout,
+                    jekyll_reference_title=args.jekyll_reference_title,
+                    chunk_options=chunk_options if format_name == "markdown" else None,
+                )
+            )
+        package_dir = Path(args.artifact_dir).expanduser() if args.artifact_dir else (destination_dir / output_stem if destination_dir else None)
+        if package_dir is not None:
+            copied = _copy_artifact_package(Path(source), package_dir, force=args.force)
+            if copied:
+                logger.info("Copied %d packaged artifact file(s) to %s", len(copied), package_dir)
+        if args.emit_tsv:
+            conversation, _ = _load_conversation(source, verbose=False, schema_warning_detail="summary")
+            root = destination_dir or (Path(args.output).expanduser().parent if args.output else Path.cwd())
+            table_dir = (package_dir or (root / output_stem)) / "artifacts" / "derived"
+            table_paths = write_embedded_tables(conversation, table_dir, force=args.force)
+            logger.info("Wrote %d derived TSV table(s) to %s", len(table_paths), table_dir)
+        return results
+
+    if Path(args.input_file).suffix.lower() == ".zip":
+        with tempfile.TemporaryDirectory(prefix="extract-chat-") as temp_dir:
+            extracted = extract_archive(Path(args.input_file), Path(temp_dir))
+            results = run(str(extracted.json_path))
+    else:
+        results = run(args.input_file)
+    if any(result.status == "failed" for result in results):
         sys.exit(1)
 
 

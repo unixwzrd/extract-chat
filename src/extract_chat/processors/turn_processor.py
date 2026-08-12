@@ -62,6 +62,7 @@ class TurnProcessorV2:
         )
 
         pending_tools: list[ToolActivityItem] = []
+        pending_media: list[MediaItem] = []
         last_assistant_turn: RenderTurn | None = None
 
         for turn_id, turn_data, _level in ordered_turns:
@@ -79,6 +80,7 @@ class TurnProcessorV2:
 
             if classification == "internal":
                 pending_tools.append(self._build_tool_activity(message, turn_id))
+                pending_media.extend(self._extract_media_items(message, turn_id))
                 continue
 
             if classification == "assistant":
@@ -86,6 +88,9 @@ class TurnProcessorV2:
                 if pending_tools:
                     turn.tools_used.extend(sorted(pending_tools, key=self._tool_sort_key))
                     pending_tools = []
+                if pending_media:
+                    turn.media_items.extend(self._deduplicate_media(pending_media))
+                    pending_media = []
                 document.turns.append(turn)
                 last_assistant_turn = turn
                 continue
@@ -102,6 +107,8 @@ class TurnProcessorV2:
 
         if pending_tools and last_assistant_turn is not None:
             last_assistant_turn.tools_used.extend(sorted(pending_tools, key=self._tool_sort_key))
+        if pending_media and last_assistant_turn is not None:
+            last_assistant_turn.media_items.extend(self._deduplicate_media(pending_media))
 
         return document
 
@@ -325,6 +332,8 @@ class TurnProcessorV2:
         for payload in payloads:
             for candidate in self._iter_media_candidates(payload):
                 for kind, value in candidate.items():
+                    if kind in {"title", "type", "filename", "name", "mime_type"}:
+                        continue
                     label = self._media_label(kind, value)
                     key = (kind, label)
                     if key in seen:
@@ -337,10 +346,35 @@ class TurnProcessorV2:
                             url=value if isinstance(value, str) and (value.startswith("http://") or value.startswith("https://")) else None,
                             turn_id=turn_id,
                             message_id=getattr(message, "id", None),
-                            metadata={"value": value},
+                            metadata={
+                                "value": value,
+                                "canonical_id": self._canonical_media_id(value),
+                                "origin": "uploaded" if getattr(getattr(message, "author", None), "role", None) == "user" else "generated",
+                                "title": candidate.get("title"),
+                                "artifact_type": candidate.get("type"),
+                            },
                         )
                     )
         return items
+
+    def _deduplicate_media(self, items: list[MediaItem]) -> list[MediaItem]:
+        result: list[MediaItem] = []
+        seen: set[str] = set()
+        for item in items:
+            key = str(item.metadata.get("canonical_id") or item.url or item.label)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(item)
+        return result
+
+    def _canonical_media_id(self, value: Any) -> str | None:
+        text = str(value or "")
+        if text.startswith("file-service://"):
+            return text[len("file-service://") :]
+        if text.startswith(("file-", "file_")):
+            return text
+        return None
 
     def _iter_media_candidates(self, value: Any) -> list[dict[str, Any]]:
         candidates: list[dict[str, Any]] = []
@@ -358,6 +392,9 @@ class TurnProcessorV2:
             )
             matched = {key: value.get(key) for key in media_keys if key in value and value.get(key)}
             if matched:
+                for context_key in ("title", "type", "filename", "name", "mime_type"):
+                    if value.get(context_key):
+                        matched[context_key] = value.get(context_key)
                 candidates.append(matched)
             for child in value.values():
                 candidates.extend(self._iter_media_candidates(child))

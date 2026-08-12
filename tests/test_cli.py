@@ -1,5 +1,6 @@
 import json
 import sys
+import zipfile
 from pathlib import Path
 from subprocess import CompletedProcess
 
@@ -354,6 +355,42 @@ def test_cli_prefers_local_media_bundle_links_when_present(tmp_path: Path) -> No
     assert "- Local: [uploaded-image.png](../bundle/media/file_abc123.png)" in rendered
     assert "- File ID: `file_abc123`" in rendered
     assert "- Remote: `https://chatgpt.com/backend-api/estuary/content?id=file_abc123&sig=xyz`" in rendered
+
+
+def test_cli_reads_plus_zip_and_copies_artifacts(tmp_path: Path) -> None:
+    payload = {
+        "title": "Plus Archive",
+        "create_time": 1_700_000_000,
+        "update_time": 1_700_086_400,
+        "mapping": {
+            "root": {"id": "root", "children": ["user-1"]},
+            "user-1": {
+                "id": "user-1", "parent": "root", "children": [],
+                "message": {
+                    "id": "message-1", "author": {"role": "user", "metadata": {}},
+                    "recipient": "all", "metadata": {"attachments": [{"id": "file_test", "name": "upload.png"}]},
+                    "content": {"content_type": "multimodal_text", "parts": [{"asset_pointer": "file-service://file_test"}]},
+                },
+            },
+        },
+    }
+    archive_path = tmp_path / "plus.zip"
+    manifest = {"artifacts": [{
+        "canonical_id": "file_test", "relative_path": "plus/artifacts/uploaded/upload.png",
+        "original_filename": "upload.png", "origin": "uploaded", "download_status": "downloaded",
+    }]}
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("plus.json", json.dumps(payload))
+        archive.writestr("plus/artifact-manifest.json", json.dumps(manifest))
+        archive.writestr("plus/artifacts/uploaded/upload.png", b"png")
+
+    destination = tmp_path / "out"
+    run_cli(["extract-chat", str(archive_path), "--output-dir", str(destination), "--format", "both", "--force"])
+    stem = "2023-11-14--2023-11-15--plus-archive"
+    assert (destination / f"{stem}.md").exists()
+    assert (destination / f"{stem}.html").exists()
+    assert (destination / stem / "artifacts/uploaded/upload.png").read_bytes() == b"png"
+    assert f"{stem}/artifacts/uploaded/upload.png" in (destination / f"{stem}.md").read_text()
 
 
 def test_maybe_file_schema_issue_skips_duplicate(monkeypatch) -> None:
