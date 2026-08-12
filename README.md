@@ -170,7 +170,10 @@ extract-chat conversation.json \
 
 The input may also be a LogGPT+ ZIP. Downloaded artifacts are copied to
 `exported/<stem>/artifacts/`, and Markdown/HTML links prefer those local files.
-Embedded HTML tables can be emitted as TSV files under `artifacts/derived/`.
+Existing CSV, TSV, and spreadsheet files remain ordinary original artifacts.
+Small parseable CSV/TSV artifacts may also be displayed as tables while the
+original download link is retained. `--emit-tsv` only derives a TSV from an
+embedded table when no matching downloaded table artifact is present.
 
 Continuity chunks default to turn boundaries with one turn of overlap. Every
 final Markdown part is measured after headers and overlap are added and may
@@ -230,8 +233,8 @@ The short version is:
 ## Known Gaps
 
 - Authenticated media downloading still belongs to `LogGPT Plus`, not `extract-chat`.
-- ZIP auto-extract for `<stem>.media.zip` is not implemented yet; `extract-chat` currently consumes the extracted `<stem>/media/` layout.
-- Chunking/vector export is still planned, not implemented.
+- The native ExtractChatApp still requires a separately built, signed helper for App Store distribution.
+- Spreadsheet formats that require a workbook parser are linked as original artifacts rather than rendered inline.
 - The test suite still emits Pydantic v2 deprecation warnings from older schema modules that have not been migrated to `ConfigDict` yet.
 
 ## Development

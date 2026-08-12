@@ -1,0 +1,98 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		EC0000010000000000000001 /* ExtractChatApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0000020000000000000001 /* ExtractChatApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		EC0000020000000000000001 /* ExtractChatApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtractChatApp.swift; sourceTree = "<group>"; };
+		EC0000030000000000000001 /* ExtractChatApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ExtractChatApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EC0000040000000000000001 /* ExtractChatApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ExtractChatApp.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		EC0000100000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		EC0000200000000000000001 = {
+			isa = PBXGroup;
+			children = (EC0000210000000000000001 /* ExtractChatApp */, EC0000220000000000000001 /* Products */,);
+			sourceTree = "<group>";
+		};
+		EC0000210000000000000001 /* ExtractChatApp */ = {
+			isa = PBXGroup;
+			children = (EC0000020000000000000001 /* ExtractChatApp.swift */, EC0000040000000000000001 /* ExtractChatApp.entitlements */,);
+			name = ExtractChatApp;
+			path = Sources/ExtractChatApp;
+			sourceTree = "<group>";
+		};
+		EC0000220000000000000001 /* Products */ = {isa = PBXGroup; children = (EC0000030000000000000001 /* ExtractChatApp.app */,); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		EC0000300000000000000001 /* ExtractChatApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EC0000410000000000000001 /* Build configuration list for PBXNativeTarget "ExtractChatApp" */;
+			buildPhases = (EC0000110000000000000001 /* Sources */, EC0000100000000000000001 /* Frameworks */, EC0000120000000000000001 /* Resources */,);
+			buildRules = ();
+			dependencies = ();
+			name = ExtractChatApp;
+			productName = ExtractChatApp;
+			productReference = EC0000030000000000000001 /* ExtractChatApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		EC0000400000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 1610; LastUpgradeCheck = 1610; TargetAttributes = {EC0000300000000000000001 = {CreatedOnToolsVersion = 16.1;};};};
+			buildConfigurationList = EC0000420000000000000001 /* Build configuration list for PBXProject "ExtractChatApp" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base,);
+			mainGroup = EC0000200000000000000001;
+			productRefGroup = EC0000220000000000000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (EC0000300000000000000001 /* ExtractChatApp */,);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		EC0000120000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		EC0000110000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (EC0000010000000000000001 /* ExtractChatApp.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		EC0000500000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; COPY_PHASE_STRIP = NO; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_TESTABILITY = YES; GCC_OPTIMIZATION_LEVEL = 0; MACOSX_DEPLOYMENT_TARGET = 13.0; ONLY_ACTIVE_ARCH = YES; SDKROOT = macosx; SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)"; SWIFT_OPTIMIZATION_LEVEL = "-Onone";}; name = Debug;};
+		EC0000510000000000000001 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; COPY_PHASE_STRIP = NO; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; ENABLE_NS_ASSERTIONS = NO; MACOSX_DEPLOYMENT_TARGET = 13.0; SDKROOT = macosx; SWIFT_COMPILATION_MODE = wholemodule;}; name = Release;};
+		EC0000520000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {CODE_SIGN_ENTITLEMENTS = ExtractChatApp.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; ENABLE_APP_SANDBOX = YES; ENABLE_HARDENED_RUNTIME = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "Extract Chat"; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities"; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks",); MACOSX_DEPLOYMENT_TARGET = 13.0; MARKETING_VERSION = 0.5.9; PRODUCT_BUNDLE_IDENTIFIER = ai.unixwzrd.ExtractChat; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 5.0;};
+			name = Debug;
+		};
+		EC0000530000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {CODE_SIGN_ENTITLEMENTS = ExtractChatApp.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; ENABLE_APP_SANDBOX = YES; ENABLE_HARDENED_RUNTIME = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "Extract Chat"; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities"; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks",); MACOSX_DEPLOYMENT_TARGET = 13.0; MARKETING_VERSION = 0.5.9; PRODUCT_BUNDLE_IDENTIFIER = ai.unixwzrd.ExtractChat; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 5.0;};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		EC0000410000000000000001 /* Build configuration list for PBXNativeTarget "ExtractChatApp" */ = {isa = XCConfigurationList; buildConfigurations = (EC0000520000000000000001 /* Debug */, EC0000530000000000000001 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+		EC0000420000000000000001 /* Build configuration list for PBXProject "ExtractChatApp" */ = {isa = XCConfigurationList; buildConfigurations = (EC0000500000000000000001 /* Debug */, EC0000510000000000000001 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+/* End XCConfigurationList section */
+	};
+	rootObject = EC0000400000000000000001 /* Project object */;
+}

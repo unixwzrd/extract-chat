@@ -352,7 +352,8 @@ def test_cli_prefers_local_media_bundle_links_when_present(tmp_path: Path) -> No
     run_cli(args)
 
     rendered = output_path.read_text(encoding="utf-8")
-    assert "- Local: [uploaded-image.png](../bundle/media/file_abc123.png)" in rendered
+    assert "![uploaded-image.png](../bundle/media/file_abc123.png)" in rendered
+    assert "- Download image: [uploaded-image.png](../bundle/media/file_abc123.png)" in rendered
     assert "- File ID: `file_abc123`" in rendered
     assert "- Remote: `https://chatgpt.com/backend-api/estuary/content?id=file_abc123&sig=xyz`" in rendered
 

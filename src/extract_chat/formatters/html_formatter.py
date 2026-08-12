@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from html import escape
+from pathlib import Path
 from typing import Any
 
 try:
@@ -165,26 +166,50 @@ class HTMLFormatter(BaseFormatter):
         return "\n".join(parts)
 
     def _render_media(self, media_items: list[MediaItem]) -> str:
-        parts = ['<details class="media-items">', "<summary>Media</summary>", "<ul>"]
+        parts = ['<details class="media-items">', "<summary>Media</summary>", '<div class="artifact-list">']
         for item in media_items:
             label = escape(item.label)
             kind = escape(item.kind)
             local_path = item.metadata.get("local_path")
             original_url = item.metadata.get("original_url")
             canonical_id = item.metadata.get("canonical_id")
+            mime_type = str(item.metadata.get("mime_type") or "").lower()
+            suffix = Path(item.url or "").suffix.lower()
+            table_rows = item.metadata.get("table_rows")
             if item.url and local_path:
-                body = f'<strong>{kind}</strong>: <a href="{escape(item.url)}">{label}</a>'
+                href = escape(item.url, quote=True)
+                body = f'<p><strong>{kind}</strong>: <a href="{href}" download>{label}</a></p>'
+                if isinstance(table_rows, list) and table_rows:
+                    body += self._render_artifact_table(table_rows)
+                elif mime_type.startswith("image/") or suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".svg"}:
+                    body += f'<figure><img src="{href}" alt="{label}" loading="lazy" style="max-width:100%;height:auto"></figure>'
+                elif mime_type.startswith("audio/") or suffix in {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}:
+                    body += f'<audio controls preload="metadata" src="{href}"></audio>'
+                elif mime_type.startswith("video/") or suffix in {".mp4", ".mov", ".webm"}:
+                    body += f'<video controls preload="metadata" src="{href}" style="max-width:100%"></video>'
                 if canonical_id:
-                    body = f'{body} <code>{escape(str(canonical_id))}</code>'
+                    body += f'<p>File ID: <code>{escape(str(canonical_id))}</code></p>'
                 if original_url:
-                    body = f'{body} <span class="muted">remote:</span> <code>{escape(str(original_url))}</code>'
-                parts.append(f"<li>{body}</li>")
+                    body += f'<p><span class="muted">Remote:</span> <code>{escape(str(original_url))}</code></p>'
+                parts.append(f'<section class="artifact">{body}</section>')
             elif item.url:
-                parts.append(f'<li><strong>{kind}</strong>: <a href="{escape(item.url)}">{label}</a></li>')
+                parts.append(f'<p><strong>{kind}</strong>: <a href="{escape(item.url)}">{label}</a></p>')
             else:
-                parts.append(f"<li><strong>{kind}</strong>: <code>{label}</code></li>")
-        parts.extend(["</ul>", "</details>"])
+                parts.append(f"<p><strong>{kind}</strong>: <code>{label}</code></p>")
+        parts.extend(["</div>", "</details>"])
         return "\n".join(parts)
+
+    def _render_artifact_table(self, rows: list[list[str]]) -> str:
+        if not rows:
+            return ""
+        width = max(len(row) for row in rows)
+        padded = [list(row) + [""] * (width - len(row)) for row in rows]
+        head = "".join(f"<th>{escape(str(value))}</th>" for value in padded[0])
+        body = "".join(
+            "<tr>" + "".join(f"<td>{escape(str(value))}</td>" for value in row) + "</tr>"
+            for row in padded[1:]
+        )
+        return f'<div class="table-wrapper"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
 
     def _render_reference_details(self, turn: RenderTurn) -> str:
         payload = build_reference_payload(

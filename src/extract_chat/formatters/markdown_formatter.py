@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from html import escape
+from pathlib import Path
 from typing import Any
 
 from extract_chat.formatters.base import BaseFormatter, FormattingError
@@ -214,8 +216,24 @@ class MarkdownFormatter(BaseFormatter):
             local_path = item.metadata.get("local_path")
             original_url = item.metadata.get("original_url")
             canonical_id = item.metadata.get("canonical_id")
+            mime_type = str(item.metadata.get("mime_type") or "").lower()
+            suffix = Path(item.url or "").suffix.lower()
+            table_rows = item.metadata.get("table_rows")
             if item.url and local_path:
-                lines.append(f"- Local: [{item.label}]({item.url})")
+                if isinstance(table_rows, list) and table_rows:
+                    lines.extend(self._render_artifact_table(table_rows))
+                    lines.append(f"- Download original: [{item.label}]({item.url})")
+                elif mime_type.startswith("image/") or suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".svg"}:
+                    lines.append(f"![{item.label}]({item.url})")
+                    lines.append(f"- Download image: [{item.label}]({item.url})")
+                elif mime_type.startswith("audio/") or suffix in {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}:
+                    lines.append(f'<audio controls src="{escape(item.url, quote=True)}">[{item.label}]({item.url})</audio>')
+                    lines.append(f"- Download audio: [{item.label}]({item.url})")
+                elif mime_type.startswith("video/") or suffix in {".mp4", ".mov", ".webm"}:
+                    lines.append(f'<video controls src="{escape(item.url, quote=True)}">[{item.label}]({item.url})</video>')
+                    lines.append(f"- Download video: [{item.label}]({item.url})")
+                else:
+                    lines.append(f"- Local: [{item.label}]({item.url})")
                 if canonical_id:
                     lines.append(f"- File ID: `{canonical_id}`")
                 if original_url:
@@ -227,6 +245,18 @@ class MarkdownFormatter(BaseFormatter):
             lines.append("")
         lines.append("</details>")
         return "\n".join(lines).strip()
+
+    def _render_artifact_table(self, rows: list[list[str]]) -> list[str]:
+        width = max(len(row) for row in rows)
+        padded = [list(row) + [""] * (width - len(row)) for row in rows]
+
+        def cell(value: str) -> str:
+            return str(value).replace("|", "\\|").replace("\n", "<br>")
+
+        lines = ["| " + " | ".join(cell(value) for value in padded[0]) + " |"]
+        lines.append("| " + " | ".join("---" for _ in range(width)) + " |")
+        lines.extend("| " + " | ".join(cell(value) for value in row) + " |" for row in padded[1:])
+        return lines
 
     def _render_reference_details(self, turn: RenderTurn) -> str:
         payload = build_reference_payload(

@@ -51,10 +51,17 @@ def _find_html_tables(value: Any) -> list[str]:
     return found
 
 
-def write_embedded_tables(conversation: Any, destination: Path, *, force: bool = False) -> list[Path]:
+def write_embedded_tables(
+    conversation: Any,
+    destination: Path,
+    *,
+    force: bool = False,
+    existing_names: set[str] | None = None,
+) -> list[Path]:
     """Write every embedded table as UTF-8 TSV under a derived artifact directory."""
 
     written: list[Path] = []
+    normalized_existing_names = {name.lower() for name in (existing_names or set())}
     destination.mkdir(parents=True, exist_ok=True)
     mapping = getattr(conversation, "mapping", {}) or {}
     for turn in mapping.values():
@@ -70,7 +77,10 @@ def write_embedded_tables(conversation: Any, destination: Path, *, force: bool =
             if not parser.rows:
                 continue
             title = titles[min(index, len(titles) - 1)] if titles else f"table-{len(written) + 1}"
-            path = destination / f"{sanitize_title(title)}.tsv"
+            stem = sanitize_title(title)
+            if stem.lower() in normalized_existing_names:
+                continue
+            path = destination / f"{stem}.tsv"
             if path.exists() and not force:
                 raise RuntimeError(f"Refusing to overwrite existing table: {path} (use --force)")
             with path.open("w", encoding="utf-8", newline="") as handle:

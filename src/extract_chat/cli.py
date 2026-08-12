@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -21,12 +20,12 @@ from hashlib import sha1
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
-from urllib.parse import urlparse, parse_qs
 
 from pydantic import ValidationError
 
 from extract_chat import __version__
 from extract_chat.archive import extract_archive
+from extract_chat.artifact_package import attach_local_artifacts, copy_artifact_package, load_artifact_entries
 from extract_chat.chunking import ChunkOptions, build_markdown_chunks, write_chunk_bundle
 from extract_chat.context.document_context import DocumentContext
 from extract_chat.formatters import HTMLFormatter, MarkdownFormatter
@@ -36,7 +35,7 @@ from extract_chat.processors.schema_normalization import normalize_raw_conversat
 from extract_chat.processors.turn_processor import TurnProcessorV2
 from extract_chat.schemas.conversation import Conversation
 from extract_chat.schemas.render_models import RenderDocument, SchemaDiagnostics
-from extract_chat.naming import canonical_conversation_stem
+from extract_chat.naming import canonical_conversation_stem, sanitize_title
 from extract_chat.tables import write_embedded_tables
 
 logging.basicConfig(
@@ -50,9 +49,6 @@ _SLUG_CLEAN_RE = re.compile(r"[^a-z0-9]+")
 _GITHUB_ISSUES_URL = "https://github.com/unixwzrd/extract-chat/issues"
 _GITHUB_NEW_ISSUE_URL = f"{_GITHUB_ISSUES_URL}/new"
 _DEFAULT_GH_REPO = "unixwzrd/extract-chat"
-_FILE_SERVICE_PREFIX = "file-service://"
-
-
 @dataclass
 class ExportResult:
     input_path: Path
@@ -66,198 +62,6 @@ class ExportResult:
     failure_message: str | None = None
     media_inventory_path: Path | None = None
     elapsed_seconds: float = 0.0
-
-
-def _normalize_media_identifier(value: Any) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, list):
-        for item in value:
-            normalized = _normalize_media_identifier(item)
-            if normalized:
-                return normalized
-        return None
-
-    text = str(value).strip()
-    if not text:
-        return None
-    if text.startswith(_FILE_SERVICE_PREFIX):
-        return text[len(_FILE_SERVICE_PREFIX):]
-    if text.startswith("http://") or text.startswith("https://"):
-        parsed = urlparse(text)
-        query_id = parse_qs(parsed.query).get("id", [None])[0]
-        if query_id:
-            return str(query_id)
-    if text.startswith("file-") or text.startswith("file_"):
-        return text
-    return None
-
-
-def _iter_media_identifiers(media_item: Any) -> list[str]:
-    candidates: list[str] = []
-    for value in (
-        getattr(media_item, "label", None),
-        getattr(media_item, "url", None),
-        (getattr(media_item, "metadata", {}) or {}).get("value"),
-        (getattr(media_item, "metadata", {}) or {}).get("canonical_id"),
-        (getattr(media_item, "metadata", {}) or {}).get("asset_pointer"),
-        (getattr(media_item, "metadata", {}) or {}).get("file_id"),
-    ):
-        normalized = _normalize_media_identifier(value)
-        if normalized and normalized not in candidates:
-            candidates.append(normalized)
-    return candidates
-
-
-def _load_media_manifest_entries(input_path: Path) -> dict[str, dict[str, Any]]:
-    base_dir = input_path.parent / input_path.stem
-    media_dir = base_dir / "media"
-    manifest_paths = [
-        base_dir / "media-manifest.json",
-        media_dir / "media-manifest.json",
-        base_dir / "artifact-manifest.json",
-    ]
-    entries: dict[str, dict[str, Any]] = {}
-
-    for manifest_path in manifest_paths:
-        if not manifest_path.exists():
-            continue
-        try:
-            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            logger.warning("Ignoring unreadable media manifest: %s", manifest_path)
-            continue
-
-        items = (payload.get("items") or payload.get("artifacts") or []) if isinstance(payload, dict) else []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            identifiers = [
-                _normalize_media_identifier(item.get("canonical_id")),
-                _normalize_media_identifier(item.get("file_id")),
-                _normalize_media_identifier(item.get("asset_pointer")),
-                _normalize_media_identifier(item.get("source_url")),
-                _normalize_media_identifier(item.get("original_url")),
-            ]
-            relative_path = item.get("relative_path") or item.get("saved_path")
-            if not relative_path:
-                saved_filename = item.get("saved_filename") or item.get("filename")
-                if saved_filename:
-                    relative_path = f"media/{saved_filename}"
-            if not relative_path:
-                continue
-            relative = Path(str(relative_path))
-            absolute_path = (base_dir.parent / relative) if relative.parts and relative.parts[0] == base_dir.name else (base_dir / relative)
-            if not absolute_path.exists():
-                continue
-            for identifier in identifiers:
-                if not identifier:
-                    continue
-                entries[identifier] = {
-                    "canonical_id": identifier,
-                    "absolute_path": absolute_path,
-                    "relative_path": str(relative_path),
-                    "display_name": item.get("original_filename") or item.get("saved_filename") or absolute_path.name,
-                    "original_url": item.get("source_url") or item.get("original_url"),
-                }
-
-    artifacts_dir = base_dir / "artifacts"
-    if artifacts_dir.exists():
-        for media_file in artifacts_dir.rglob("*"):
-            if not media_file.is_file() or media_file.name.endswith("manifest.json"):
-                continue
-            identifier = _normalize_media_identifier(media_file.stem) or media_file.stem
-            entries.setdefault(
-                identifier,
-                {
-                    "canonical_id": identifier,
-                    "absolute_path": media_file,
-                    "relative_path": str(media_file.relative_to(base_dir)),
-                    "display_name": media_file.name,
-                    "original_url": None,
-                },
-            )
-
-    if media_dir.exists():
-        for media_file in media_dir.iterdir():
-            if not media_file.is_file():
-                continue
-            identifier = _normalize_media_identifier(media_file.stem)
-            if not identifier:
-                identifier = media_file.stem
-            entries.setdefault(
-                identifier,
-                {
-                    "canonical_id": identifier,
-                    "absolute_path": media_file,
-                    "relative_path": str(Path("media") / media_file.name),
-                    "display_name": media_file.name,
-                    "original_url": None,
-                },
-            )
-
-    return entries
-
-
-def _attach_local_media_links(
-    *,
-    document: RenderDocument,
-    input_path: Path,
-    output_path: Path | None,
-) -> None:
-    manifest_entries = _load_media_manifest_entries(input_path)
-    if not manifest_entries:
-        return
-
-    output_parent = output_path.parent if output_path is not None else input_path.parent
-    for turn in document.turns:
-        for item in turn.media_items:
-            for identifier in _iter_media_identifiers(item):
-                match = manifest_entries.get(identifier)
-                if not match:
-                    continue
-                asset_path = Path(match["absolute_path"])
-                if output_path is not None and output_path.stem != input_path.stem and asset_path.parent != output_parent:
-                    category = "derived"
-                    source_parts = Path(match["relative_path"]).parts
-                    if "generated" in source_parts:
-                        category = "generated"
-                    elif "uploaded" in source_parts:
-                        category = "uploaded"
-                    destination = output_parent / output_path.stem / "artifacts" / category / asset_path.name
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    if asset_path.resolve() != destination.resolve():
-                        shutil.copy2(asset_path, destination)
-                    asset_path = destination
-                relative_link = os.path.relpath(asset_path, output_parent)
-                if item.url:
-                    item.metadata["original_url"] = item.url
-                item.metadata["canonical_id"] = match["canonical_id"]
-                item.metadata["local_path"] = relative_link
-                item.metadata["display_name"] = match["display_name"]
-                item.url = relative_link
-                item.label = match["display_name"]
-                break
-
-
-def _copy_artifact_package(input_path: Path, destination: Path, *, force: bool) -> list[Path]:
-    """Copy downloaded archive artifacts beside rendered output without flattening categories."""
-
-    source_root = input_path.parent / input_path.stem
-    if not source_root.exists():
-        return []
-    copied: list[Path] = []
-    for source in source_root.rglob("*"):
-        if not source.is_file():
-            continue
-        relative = source.relative_to(source_root)
-        target = destination / relative
-        if target.exists() and not force:
-            raise RuntimeError(f"Refusing to overwrite existing artifact: {target} (use --force)")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
-        copied.append(target)
-    return copied
 
 
 def _slugify(value: str | None) -> str:
@@ -735,7 +539,7 @@ def export_file(
 
             formatter = HTMLFormatter({"css_file": css_file, "verbose": verbose}) if format_name == "html" else MarkdownFormatter({"verbose": verbose})
             output_path = _resolve_single_output_path(input_file, output, format_name)
-            _attach_local_media_links(document=document, input_path=input_path, output_path=output_path)
+            attach_local_artifacts(document=document, input_path=input_path, output_path=output_path)
 
             if output_path.exists() and output_path.is_dir():
                 raise RuntimeError(f"Output path must be a file for markdown/html output. Got directory: {output_path}")
@@ -1183,14 +987,25 @@ def main() -> None:
             )
         package_dir = Path(args.artifact_dir).expanduser() if args.artifact_dir else (destination_dir / output_stem if destination_dir else None)
         if package_dir is not None:
-            copied = _copy_artifact_package(Path(source), package_dir, force=args.force)
+            copied = copy_artifact_package(Path(source), package_dir, force=args.force)
             if copied:
                 logger.info("Copied %d packaged artifact file(s) to %s", len(copied), package_dir)
         if args.emit_tsv:
             conversation, _ = _load_conversation(source, verbose=False, schema_warning_detail="summary")
             root = destination_dir or (Path(args.output).expanduser().parent if args.output else Path.cwd())
             table_dir = (package_dir or (root / output_stem)) / "artifacts" / "derived"
-            table_paths = write_embedded_tables(conversation, table_dir, force=args.force)
+            artifact_entries = load_artifact_entries(Path(source))
+            existing_table_names = {
+                sanitize_title(Path(str(entry.get("display_name") or entry["absolute_path"])).stem)
+                for entry in artifact_entries.values()
+                if Path(entry["absolute_path"]).suffix.lower() in {".csv", ".tsv", ".xls", ".xlsx", ".numbers"}
+            }
+            table_paths = write_embedded_tables(
+                conversation,
+                table_dir,
+                force=args.force,
+                existing_names=existing_table_names,
+            )
             logger.info("Wrote %d derived TSV table(s) to %s", len(table_paths), table_dir)
         return results
 
