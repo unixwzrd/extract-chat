@@ -19,10 +19,10 @@ Use it when you want to answer questions like:
 
 - Which format should I use?
 - How do I export one specific answer?
+- How do I process a LogGPT JSON file or LogGPT+ ZIP archive?
 - How do I process a whole directory of JSON files?
-- How does this fit with LogGPT and local media bundles?
 
-For the full option reference, see [extract_chat.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat.md).
+For the full option reference, see [extract_chat.md](extract_chat.md).
 
 ## Most Common Cases
 
@@ -84,16 +84,20 @@ If you want one substantial assistant answer turned into web pages, use Jekyll.
 
 ## Working with LogGPT
 
-A common workflow is:
+A common LogGPT workflow is:
 
-1. Use `LogGPT` to download a ChatGPT conversation as JSON.
-2. Optionally extract a matching local media bundle.
-3. Run `extract-chat` on the JSON.
-4. Keep the Markdown or HTML as an archive, or export a selected assistant turn to Jekyll.
+1. Use LogGPT Basic to download a ChatGPT conversation as JSON, or use LogGPT Plus to download a ZIP containing the JSON and its artifacts.
+2. Pass that `.json` or `.zip` file directly to `extract-chat`.
+3. Keep the Markdown or HTML as an archive, or export a selected assistant turn to Jekyll.
 
-If a local extracted media bundle exists beside the conversation using the shared media contract, `extract-chat` will prefer local media links where possible.
+```bash
+extract-chat conversation.json --output-dir exported --format both
+extract-chat conversation.zip --output-dir exported --format both
+```
 
-For the media bundle layout, see [media-bundle-contract.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/media-bundle-contract.md).
+When the input is a LogGPT+ ZIP, `extract-chat` safely extracts the archive, locates its conversation JSON automatically, copies packaged artifacts into the output directory, and uses local artifact links in Markdown and HTML where possible.
+
+For the archive layout, see [media-bundle-contract.md](media-bundle-contract.md).
 
 ## Batch Validation
 
@@ -161,8 +165,8 @@ That gives you an editable install and runs the full test suite.
 
 ## Related Docs
 
-- [Back to README](/Users/mps/projects/AI-PROJECTS/extract-chat/README.md)
-- [CLI Reference](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat.md)
-- [Python API](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/api.md)
-- [Architecture Guide](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat_architecture.md)
-- [Media Bundle Contract](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/media-bundle-contract.md)
+- [Back to README](../README.md)
+- [CLI Reference](extract_chat.md)
+- [Python API](api.md)
+- [Architecture Guide](extract_chat_architecture.md)
+- [Media Bundle Contract](media-bundle-contract.md)

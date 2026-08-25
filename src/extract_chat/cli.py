@@ -821,10 +821,10 @@ def run_batch_validation(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description=f"Extract a ChatGPT conversation from JSON using chronological processing (v{__version__}).",
+        description=f"Extract a ChatGPT conversation from JSON or a LogGPT+ ZIP using chronological processing (v{__version__}).",
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument("input_file", nargs="?", help="Path to the input JSON file.")
+    parser.add_argument("input_file", nargs="?", help="Path to an input conversation JSON file or LogGPT+ ZIP archive.")
     parser.add_argument("-o", "--output", help="Output path. For batch mode this is the run root directory.")
     parser.add_argument(
         "-f",

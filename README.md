@@ -22,7 +22,7 @@
   - [License](#license)
 
 
-`extract-chat` converts OpenAI and ChatGPT exported conversation JSON into readable Markdown or HTML conversation logs, with preserved citation links, schema diagnostics, and collapsible tool activity.
+`extract-chat` converts OpenAI and ChatGPT conversation JSON or LogGPT+ ZIP archives into readable Markdown or HTML conversation logs, with preserved citation links, local artifacts, schema diagnostics, and collapsible tool activity.
 
 If you've ever downloaded your ChatGPT history and opened it thinking:
 
@@ -51,9 +51,9 @@ And it preserves things most tools lose:
 
 **Typical workflow:**
 
-1. Use LogGPT to download your conversation  
-2. Run `extract-chat` on the JSON  
-3. Get a clean, readable, portable transcript  
+1. Use LogGPT to download your conversation
+2. Run `extract-chat` on the JSON or LogGPT+ ZIP
+3. Get a clean, readable, portable transcript
 
 With **LogGPT Plus**, you can also download all media (images, audio, files), and `extract-chat` will automatically link that media into the output.
 
@@ -111,7 +111,7 @@ pip install "git+https://github.com/unixwzrd/extract-chat.git"
 If you want a specific release:
 
 ```bash
-pip install "git+https://github.com/unixwzrd/extract-chat.git@v0.5.8"
+pip install "git+https://github.com/unixwzrd/extract-chat.git@v0.6.0"
 ```
 
 If you prefer to clone the repository first:
@@ -158,22 +158,17 @@ HTML:
 extract-chat path/to/conversation.json --format html --output out.html
 ```
 
-Complete archive extraction with canonical `start--end--title` names:
+Complete archive extraction from either input format with canonical `start--end--title` names:
 
 ```bash
-extract-chat conversation.json \
+extract-chat conversation.zip \
   --output-dir exported \
   --format both \
   --emit-tsv \
   --chunk
 ```
 
-The input may also be a LogGPT+ ZIP. Downloaded artifacts are copied to
-`exported/<stem>/artifacts/`, and Markdown/HTML links prefer those local files.
-Existing CSV, TSV, and spreadsheet files remain ordinary original artifacts.
-Small parseable CSV/TSV artifacts may also be displayed as tables while the
-original download link is retained. `--emit-tsv` only derives a TSV from an
-embedded table when no matching downloaded table artifact is present.
+Pass either a standalone conversation JSON file or a LogGPT+ ZIP as the positional input. For a ZIP, downloaded artifacts are copied to `exported/<stem>/artifacts/`, and Markdown/HTML links prefer those local files. Existing CSV, TSV, and spreadsheet files remain ordinary original artifacts. Small parseable CSV/TSV artifacts may also be displayed as tables while the original download link is retained. `--emit-tsv` only derives a TSV from an embedded table when no matching downloaded table artifact is present.
 
 Continuity chunks default to turn boundaries with one turn of overlap. Every
 final Markdown part is measured after headers and overlap are added and may
@@ -208,11 +203,11 @@ extract-chat \
 
 The README stays intentionally high-level. Use the docs below for detail:
 
-- [docs/extract_chat.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat.md) for command-line reference and option details
-- [docs/usage_examples.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/usage_examples.md) for examples, workflows, and common use cases
-- [docs/api.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/api.md) for Python/library usage
-- [docs/extract_chat_architecture.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat_architecture.md) for internal pipeline details
-- [docs/media-bundle-contract.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/media-bundle-contract.md) for local media bundle integration
+- [docs/extract_chat.md](docs/extract_chat.md) for command-line reference and option details
+- [docs/usage_examples.md](docs/usage_examples.md) for examples, workflows, and common use cases
+- [docs/api.md](docs/api.md) for Python/library usage
+- [docs/extract_chat_architecture.md](docs/extract_chat_architecture.md) for internal pipeline details
+- [docs/media-bundle-contract.md](docs/media-bundle-contract.md) for local media bundle integration
 
 ## Python API
 
@@ -220,8 +215,8 @@ The README stays intentionally high-level. Use the docs below for detail:
 
 If you want programmatic usage, see:
 
-- [docs/api.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/api.md) for loading JSON, building a render document, rendering Markdown/HTML, and exporting Jekyll pages
-- [docs/extract_chat_architecture.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat_architecture.md) for internal pipeline details
+- [docs/api.md](docs/api.md) for loading JSON, building a render document, rendering Markdown/HTML, and exporting Jekyll pages
+- [docs/extract_chat_architecture.md](docs/extract_chat_architecture.md) for internal pipeline details
 
 The short version is:
 
@@ -266,8 +261,8 @@ The tests cover:
 
 For the fuller command reference and deeper examples, use:
 
-- [docs/extract_chat.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat.md)
-- [docs/usage_examples.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/usage_examples.md)
+- [docs/extract_chat.md](docs/extract_chat.md)
+- [docs/usage_examples.md](docs/usage_examples.md)
 
 ## Contributing
 

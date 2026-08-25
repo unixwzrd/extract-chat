@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-08-24 - 0.6.0 - LogGPT Plus Archive Support
+
+### Archive and artifact handling
+
+- Accept either a standalone ChatGPT conversation JSON file or a LogGPT+ ZIP archive as the CLI input.
+- Safely extract ZIP archives while rejecting absolute paths, traversal, and symlink members.
+- Copy generated, uploaded, and derived artifacts into a conversation-named output directory and prefer local artifact links in Markdown and HTML.
+- Preserve original tabular artifacts while optionally rendering small CSV/TSV files inline or deriving TSV only when no downloaded equivalent exists.
+
+### Output and continuity
+
+- Add canonical output naming, combined Markdown and HTML export, and configurable destination and artifact directories.
+- Add turn-aware Markdown chunking with optional overlap and a hard 524,288-byte maximum for ChatGPT uploads.
+- Add a native macOS front end for selecting JSON or ZIP input and common export controls.
+
+### Documentation and testing
+
+- Document direct JSON and ZIP workflows, the LogGPT artifact archive contract, chunking behavior, and the macOS front end.
+- Add regression coverage for archive safety, artifact discovery and rendering, table handling, canonical naming, and chunk-size enforcement.
+
 ## 2026-03-27 - 0.5.8 - Initial Public Release
 
 ### Tests
