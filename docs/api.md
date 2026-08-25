@@ -140,7 +140,7 @@ For that reason:
 
 ## Navigation
 
-- [Back to README](/Users/mps/projects/AI-PROJECTS/extract-chat/README.md)
-- [CLI Guide](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat.md)
-- [Architecture Guide](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat_architecture.md)
-- [Media Bundle Contract](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/media-bundle-contract.md)
+- [Back to README](../README.md)
+- [CLI Guide](extract_chat.md)
+- [Architecture Guide](extract_chat_architecture.md)
+- [Media Bundle Contract](media-bundle-contract.md)

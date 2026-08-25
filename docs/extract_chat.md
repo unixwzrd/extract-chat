@@ -8,9 +8,7 @@
   - [Development Notes](#development-notes)
   - [Navigation](#navigation)
 
-The `extract-chat` command converts a saved ChatGPT conversation export (.json) into
-Markdown, HTML, or a bundle of Jekyll section pages while preserving turn order,
-inline citations, and tool-call context.
+The `extract-chat` command converts a saved ChatGPT conversation JSON file or LogGPT+ ZIP archive into Markdown, HTML, or a bundle of Jekyll section pages while preserving turn order, inline citations, tool-call context, and local artifact links.
 
 ## Quick Start
 
@@ -20,6 +18,9 @@ extract-chat conversation.json --output conversation.md
 
 # HTML with optional CSS override
 extract-chat conversation.json --format html --css-file site.css --output conversation.html
+
+# LogGPT+ ZIP with packaged artifacts
+extract-chat conversation.zip --output-dir exported --format both
 
 # Jekyll section export (writes multiple files into a directory)
 extract-chat conversation.json \
@@ -38,6 +39,10 @@ extract-chat conversation.json \
 | `-c, --css-file` | Optional CSS file path applied to HTML output. |
 | `-V, --version` | Show the installed `extract-chat` version and exit. |
 | `--force` | Overwrite the destination if it already exists. |
+| `--output-dir` | Destination directory using canonical conversation names. |
+| `--artifact-dir` | Override the directory used for copied artifacts. |
+| `--emit-tsv` | Derive TSV files from embedded HTML tables when no equivalent artifact exists. |
+| `--chunk` | Write upload-safe Markdown continuity chunks. |
 | `--jekyll-turn-id` | Assistant turn identifier for Jekyll exports (required for `--format jekyll`). |
 | `--jekyll-base-slug` | Base slug used for section filenames/permalinks (Jekyll). |
 | `--jekyll-layout` | Front-matter layout for Jekyll pages (default `page`). |
@@ -54,11 +59,11 @@ Markdown, HTML, or Jekyll outputs.
 
 ## Related Documentation
 
-- [README.md](/Users/mps/projects/AI-PROJECTS/extract-chat/README.md) – project overview and install paths
-- [usage_examples.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/usage_examples.md) – practical workflows and examples
-- [api.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/api.md) – Python/library usage
-- [extract_chat_architecture.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat_architecture.md) – internal pipeline and formatter architecture
-- [media-bundle-contract.md](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/media-bundle-contract.md) – shared media bundle layout used with `LogGPT Plus`
+- [README.md](../README.md) – project overview and install paths
+- [usage_examples.md](usage_examples.md) – practical workflows and examples
+- [api.md](api.md) – Python/library usage
+- [extract_chat_architecture.md](extract_chat_architecture.md) – internal pipeline and formatter architecture
+- [media-bundle-contract.md](media-bundle-contract.md) – shared artifact archive layout used with LogGPT Plus
 
 ## Development Notes
 
@@ -68,7 +73,7 @@ Markdown, HTML, or Jekyll outputs.
 
 ## Navigation
 
-- [Back to README](/Users/mps/projects/AI-PROJECTS/extract-chat/README.md)
-- [Usage Examples](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/usage_examples.md)
-- [Python API](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/api.md)
-- [Architecture Guide](/Users/mps/projects/AI-PROJECTS/extract-chat/docs/extract_chat_architecture.md)
+- [Back to README](../README.md)
+- [Usage Examples](usage_examples.md)
+- [Python API](api.md)
+- [Architecture Guide](extract_chat_architecture.md)

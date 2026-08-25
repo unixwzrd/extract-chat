@@ -202,3 +202,10 @@ PA-Paper
 # Codex items
 AGENTS.md
 .project-planning/
+
+# Local browser automation state and generated visual QA output
+.playwright-cli/
+/output/playwright/
+
+# SwiftPM products for the tracked macOS application source
+macos/ExtractChatApp/.build/

@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -19,11 +20,13 @@ from hashlib import sha1
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
-from urllib.parse import urlparse, parse_qs
 
 from pydantic import ValidationError
 
 from extract_chat import __version__
+from extract_chat.archive import extract_archive
+from extract_chat.artifact_package import attach_local_artifacts, copy_artifact_package, load_artifact_entries
+from extract_chat.chunking import ChunkOptions, build_markdown_chunks, write_chunk_bundle
 from extract_chat.context.document_context import DocumentContext
 from extract_chat.formatters import HTMLFormatter, MarkdownFormatter
 from extract_chat.formatters.jekyll_formatter import JekyllTurnExporter
@@ -32,6 +35,8 @@ from extract_chat.processors.schema_normalization import normalize_raw_conversat
 from extract_chat.processors.turn_processor import TurnProcessorV2
 from extract_chat.schemas.conversation import Conversation
 from extract_chat.schemas.render_models import RenderDocument, SchemaDiagnostics
+from extract_chat.naming import canonical_conversation_stem, sanitize_title
+from extract_chat.tables import write_embedded_tables
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,9 +49,6 @@ _SLUG_CLEAN_RE = re.compile(r"[^a-z0-9]+")
 _GITHUB_ISSUES_URL = "https://github.com/unixwzrd/extract-chat/issues"
 _GITHUB_NEW_ISSUE_URL = f"{_GITHUB_ISSUES_URL}/new"
 _DEFAULT_GH_REPO = "unixwzrd/extract-chat"
-_FILE_SERVICE_PREFIX = "file-service://"
-
-
 @dataclass
 class ExportResult:
     input_path: Path
@@ -60,146 +62,6 @@ class ExportResult:
     failure_message: str | None = None
     media_inventory_path: Path | None = None
     elapsed_seconds: float = 0.0
-
-
-def _normalize_media_identifier(value: Any) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, list):
-        for item in value:
-            normalized = _normalize_media_identifier(item)
-            if normalized:
-                return normalized
-        return None
-
-    text = str(value).strip()
-    if not text:
-        return None
-    if text.startswith(_FILE_SERVICE_PREFIX):
-        return text[len(_FILE_SERVICE_PREFIX):]
-    if text.startswith("http://") or text.startswith("https://"):
-        parsed = urlparse(text)
-        query_id = parse_qs(parsed.query).get("id", [None])[0]
-        if query_id:
-            return str(query_id)
-    if text.startswith("file-") or text.startswith("file_"):
-        return text
-    return None
-
-
-def _iter_media_identifiers(media_item: Any) -> list[str]:
-    candidates: list[str] = []
-    for value in (
-        getattr(media_item, "label", None),
-        getattr(media_item, "url", None),
-        (getattr(media_item, "metadata", {}) or {}).get("value"),
-        (getattr(media_item, "metadata", {}) or {}).get("canonical_id"),
-        (getattr(media_item, "metadata", {}) or {}).get("asset_pointer"),
-        (getattr(media_item, "metadata", {}) or {}).get("file_id"),
-    ):
-        normalized = _normalize_media_identifier(value)
-        if normalized and normalized not in candidates:
-            candidates.append(normalized)
-    return candidates
-
-
-def _load_media_manifest_entries(input_path: Path) -> dict[str, dict[str, Any]]:
-    base_dir = input_path.parent / input_path.stem
-    media_dir = base_dir / "media"
-    manifest_paths = [
-        base_dir / "media-manifest.json",
-        media_dir / "media-manifest.json",
-    ]
-    entries: dict[str, dict[str, Any]] = {}
-
-    for manifest_path in manifest_paths:
-        if not manifest_path.exists():
-            continue
-        try:
-            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            logger.warning("Ignoring unreadable media manifest: %s", manifest_path)
-            continue
-
-        items = payload.get("items", []) if isinstance(payload, dict) else []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            identifiers = [
-                _normalize_media_identifier(item.get("canonical_id")),
-                _normalize_media_identifier(item.get("file_id")),
-                _normalize_media_identifier(item.get("asset_pointer")),
-                _normalize_media_identifier(item.get("source_url")),
-                _normalize_media_identifier(item.get("original_url")),
-            ]
-            relative_path = item.get("relative_path") or item.get("saved_path")
-            if not relative_path:
-                saved_filename = item.get("saved_filename") or item.get("filename")
-                if saved_filename:
-                    relative_path = f"media/{saved_filename}"
-            if not relative_path:
-                continue
-            absolute_path = base_dir / str(relative_path)
-            if not absolute_path.exists():
-                continue
-            for identifier in identifiers:
-                if not identifier:
-                    continue
-                entries[identifier] = {
-                    "canonical_id": identifier,
-                    "absolute_path": absolute_path,
-                    "relative_path": str(relative_path),
-                    "display_name": item.get("original_filename") or item.get("saved_filename") or absolute_path.name,
-                    "original_url": item.get("source_url") or item.get("original_url"),
-                }
-
-    if media_dir.exists():
-        for media_file in media_dir.iterdir():
-            if not media_file.is_file():
-                continue
-            identifier = _normalize_media_identifier(media_file.stem)
-            if not identifier:
-                identifier = media_file.stem
-            entries.setdefault(
-                identifier,
-                {
-                    "canonical_id": identifier,
-                    "absolute_path": media_file,
-                    "relative_path": str(Path("media") / media_file.name),
-                    "display_name": media_file.name,
-                    "original_url": None,
-                },
-            )
-
-    return entries
-
-
-def _attach_local_media_links(
-    *,
-    document: RenderDocument,
-    input_path: Path,
-    output_path: Path | None,
-) -> None:
-    manifest_entries = _load_media_manifest_entries(input_path)
-    if not manifest_entries:
-        return
-
-    output_parent = output_path.parent if output_path is not None else input_path.parent
-    for turn in document.turns:
-        for item in turn.media_items:
-            for identifier in _iter_media_identifiers(item):
-                match = manifest_entries.get(identifier)
-                if not match:
-                    continue
-                relative_link = os.path.relpath(match["absolute_path"], output_parent)
-                if item.url:
-                    item.metadata["original_url"] = item.url
-                item.metadata["canonical_id"] = match["canonical_id"]
-                item.metadata["local_path"] = relative_link
-                item.metadata["display_name"] = match["display_name"]
-                item.url = relative_link
-                item.label = match["display_name"]
-                break
 
 
 def _slugify(value: str | None) -> str:
@@ -577,6 +439,7 @@ def export_file(
     jekyll_base_slug: str | None = None,
     jekyll_layout: str = "page",
     jekyll_reference_title: str = "References",
+    chunk_options: ChunkOptions | None = None,
 ) -> ExportResult:
     start = time.perf_counter()
     input_path = Path(input_file)
@@ -676,7 +539,7 @@ def export_file(
 
             formatter = HTMLFormatter({"css_file": css_file, "verbose": verbose}) if format_name == "html" else MarkdownFormatter({"verbose": verbose})
             output_path = _resolve_single_output_path(input_file, output, format_name)
-            _attach_local_media_links(document=document, input_path=input_path, output_path=output_path)
+            attach_local_artifacts(document=document, input_path=input_path, output_path=output_path)
 
             if output_path.exists() and output_path.is_dir():
                 raise RuntimeError(f"Output path must be a file for markdown/html output. Got directory: {output_path}")
@@ -687,6 +550,13 @@ def export_file(
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(output_content, encoding="utf-8")
             logger.info("Wrote %s", output_path)
+
+            if format_name == "markdown" and chunk_options is not None:
+                chunk_stem = output_path.stem
+                bundle = build_markdown_chunks(document, stem=chunk_stem, options=chunk_options)
+                chunk_dir = output_path.parent / f"{chunk_stem}-chunks"
+                write_chunk_bundle(bundle, chunk_dir, force=force)
+                logger.info("Wrote %d continuity chunks to %s", len(bundle.chunks), chunk_dir)
 
             schema_report_path = None
             if diagnostics.has_warnings:
@@ -760,7 +630,7 @@ def _ensure_safe_batch_output(source_dir: Path, output_root: Path) -> Path:
 
 def _discover_json_files(batch_dir: Path) -> list[Path]:
     return sorted(
-        path for path in batch_dir.iterdir()
+        path for path in batch_dir.rglob("*.json")
         if path.is_file() and path.suffix.lower() == ".json"
     )
 
@@ -951,15 +821,15 @@ def run_batch_validation(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description=f"Extract a ChatGPT conversation from JSON using chronological processing (v{__version__}).",
+        description=f"Extract a ChatGPT conversation from JSON or a LogGPT+ ZIP using chronological processing (v{__version__}).",
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument("input_file", nargs="?", help="Path to the input JSON file.")
+    parser.add_argument("input_file", nargs="?", help="Path to an input conversation JSON file or LogGPT+ ZIP archive.")
     parser.add_argument("-o", "--output", help="Output path. For batch mode this is the run root directory.")
     parser.add_argument(
         "-f",
         "--format",
-        choices=["markdown", "html", "jekyll"],
+        choices=["markdown", "html", "both", "jekyll"],
         default="markdown",
         help="Output format (default: markdown)",
     )
@@ -974,6 +844,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--log-file", help="Optional path to write logs to a file.")
     parser.add_argument("--force", action="store_true", help="Force overwrite existing files.")
+    parser.add_argument("--output-dir", help="Destination directory; output names use start--end--title.")
+    parser.add_argument("--artifact-dir", help="Artifact directory (default: OUTPUT_DIR/<conversation-stem>).")
+    parser.add_argument("--emit-tsv", action="store_true", help="Convert embedded HTML tables to TSV artifacts.")
+    parser.add_argument("--chunk", action="store_true", help="Write upload-safe Markdown continuity chunks.")
+    parser.add_argument("--chunk-strategy", choices=["hybrid", "turn", "heading", "paragraph", "fixed"], default="hybrid")
+    parser.add_argument("--chunk-max-bytes", type=int, default=512 * 1024)
+    parser.add_argument("--chunk-max-lines", type=int)
+    parser.add_argument("--chunk-max-tokens", type=int)
+    parser.add_argument("--chunk-token-encoding", default="o200k_base")
+    parser.add_argument(
+        "--chunk-overlap-turns",
+        type=int,
+        help="Turn overlap (default: 1 unless a line or byte overlap is selected).",
+    )
+    parser.add_argument("--chunk-overlap-lines", type=int, default=0)
+    parser.add_argument("--chunk-overlap-bytes", type=int, default=0)
     parser.add_argument(
         "--schema-warning-detail",
         choices=["summary", "full"],
@@ -1050,24 +936,86 @@ def main() -> None:
         logger.error("Input file not found: %s", args.input_file)
         sys.exit(1)
 
-    result = export_file(
-        input_file=args.input_file,
-        format_name=args.format,
-        output=args.output,
-        css_file=args.css_file,
-            verbose=args.verbose,
-            force=args.force,
-            log_file=args.log_file,
-            schema_warning_detail=args.schema_warning_detail,
-            media_index=args.media_index,
-            gh_file_schema_issue=args.gh_file_schema_issue,
-            gh_repo=args.gh_repo,
-            jekyll_turn_id=args.jekyll_turn_id,
-        jekyll_base_slug=args.jekyll_base_slug,
-        jekyll_layout=args.jekyll_layout,
-        jekyll_reference_title=args.jekyll_reference_title,
-    )
-    if result.status == "failed":
+    chunk_options = None
+    if args.chunk:
+        overlap_turns = args.chunk_overlap_turns
+        if overlap_turns is None:
+            overlap_turns = 0 if (args.chunk_overlap_lines or args.chunk_overlap_bytes) else 1
+        chunk_options = ChunkOptions(
+            strategy=args.chunk_strategy,
+            max_bytes=args.chunk_max_bytes,
+            max_lines=args.chunk_max_lines,
+            max_tokens=args.chunk_max_tokens,
+            token_encoding=args.chunk_token_encoding,
+            overlap_turns=overlap_turns,
+            overlap_lines=args.chunk_overlap_lines,
+            overlap_bytes=args.chunk_overlap_bytes,
+        )
+
+    def run(source: str) -> list[ExportResult]:
+        output_stem = Path(source).stem
+        if args.output_dir:
+            conversation, _ = _load_conversation(source, verbose=False, schema_warning_detail="summary")
+            output_stem = canonical_conversation_stem(conversation)
+        destination_dir = Path(args.output_dir).expanduser() if args.output_dir else None
+        formats = ["markdown", "html"] if args.format == "both" else [args.format]
+        results: list[ExportResult] = []
+        for format_name in formats:
+            output = args.output
+            if destination_dir is not None:
+                extension = "md" if format_name == "markdown" else "html"
+                output = str(destination_dir / f"{output_stem}.{extension}")
+            results.append(
+                export_file(
+                    input_file=source,
+                    format_name=format_name,
+                    output=output,
+                    css_file=args.css_file,
+                    verbose=args.verbose,
+                    force=args.force,
+                    log_file=args.log_file,
+                    schema_warning_detail=args.schema_warning_detail,
+                    media_index=args.media_index,
+                    gh_file_schema_issue=args.gh_file_schema_issue,
+                    gh_repo=args.gh_repo,
+                    jekyll_turn_id=args.jekyll_turn_id,
+                    jekyll_base_slug=args.jekyll_base_slug,
+                    jekyll_layout=args.jekyll_layout,
+                    jekyll_reference_title=args.jekyll_reference_title,
+                    chunk_options=chunk_options if format_name == "markdown" else None,
+                )
+            )
+        package_dir = Path(args.artifact_dir).expanduser() if args.artifact_dir else (destination_dir / output_stem if destination_dir else None)
+        if package_dir is not None:
+            copied = copy_artifact_package(Path(source), package_dir, force=args.force)
+            if copied:
+                logger.info("Copied %d packaged artifact file(s) to %s", len(copied), package_dir)
+        if args.emit_tsv:
+            conversation, _ = _load_conversation(source, verbose=False, schema_warning_detail="summary")
+            root = destination_dir or (Path(args.output).expanduser().parent if args.output else Path.cwd())
+            table_dir = (package_dir or (root / output_stem)) / "artifacts" / "derived"
+            artifact_entries = load_artifact_entries(Path(source))
+            existing_table_names = {
+                sanitize_title(Path(str(entry.get("display_name") or entry["absolute_path"])).stem)
+                for entry in artifact_entries.values()
+                if Path(entry["absolute_path"]).suffix.lower() in {".csv", ".tsv", ".xls", ".xlsx", ".numbers"}
+            }
+            table_paths = write_embedded_tables(
+                conversation,
+                table_dir,
+                force=args.force,
+                existing_names=existing_table_names,
+            )
+            logger.info("Wrote %d derived TSV table(s) to %s", len(table_paths), table_dir)
+        return results
+
+    if Path(args.input_file).suffix.lower() == ".zip":
+        with tempfile.TemporaryDirectory(prefix="extract-chat-") as temp_dir:
+            extracted = extract_archive(Path(args.input_file), Path(temp_dir))
+            results = run(str(extracted.json_path))
+    else:
+        results = run(args.input_file)
+    if any(result.status == "failed" for result in results):
         sys.exit(1)
 
 
