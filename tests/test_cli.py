@@ -235,6 +235,18 @@ def test_schema_diagnostics_accepts_common_newer_content_types() -> None:
     assert "unknown_content_type" not in codes
 
 
+def test_schema_diagnostics_accepts_chatgpt_work_top_level_fields() -> None:
+    payload = {
+        "title": "Work conversation",
+        "mapping": {},
+        "context_truncation_continuation": None,
+        "is_study_mode": False,
+        "is_temporary_chat": False,
+    }
+    diagnostics = analyze_raw_conversation(payload)
+    assert "unknown_top_level_key" not in {warning.code for warning in diagnostics.warnings}
+
+
 def test_cli_writes_media_inventory_when_requested(tmp_path: Path) -> None:
     payload = {
         "title": "Media Export",

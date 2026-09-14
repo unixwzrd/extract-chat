@@ -372,6 +372,8 @@ class TurnProcessorV2:
         text = str(value or "")
         if text.startswith("file-service://"):
             return text[len("file-service://") :]
+        if text.startswith("sediment://"):
+            return text[len("sediment://") :]
         if text.startswith(("file-", "file_")):
             return text
         return None

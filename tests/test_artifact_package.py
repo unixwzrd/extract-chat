@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from extract_chat.artifact_package import attach_local_artifacts, load_artifact_entries
+from extract_chat.artifact_package import attach_local_artifacts, load_artifact_entries, normalize_artifact_identifier
 from extract_chat.formatters.html_formatter import HTMLFormatter
 from extract_chat.formatters.markdown_formatter import MarkdownFormatter
 from extract_chat.schemas.render_models import MediaItem, RenderDocument, RenderTurn
@@ -87,3 +87,56 @@ def test_manifest_rejects_parent_traversal(tmp_path: Path) -> None:
     }
     (package / "artifact-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     assert load_artifact_entries(input_path) == {}
+
+
+def test_work_artifacts_attach_by_sediment_id_and_workspace_link(tmp_path: Path) -> None:
+    input_path = tmp_path / "work-chat.json"
+    input_path.write_text("{}", encoding="utf-8")
+    package = tmp_path / "work-chat"
+    generated = package / "artifacts" / "generated"
+    generated.mkdir(parents=True)
+    (generated / "generated-image.png").write_bytes(b"png")
+    (generated / "workspace-notes.md").write_text("# Notes\n", encoding="utf-8")
+    manifest = {
+        "format_version": 2,
+        "artifacts": [
+            {
+                "canonical_id": "file-work-image",
+                "asset_pointer": "sediment://file-work-image",
+                "relative_path": "work-chat/artifacts/generated/generated-image.png",
+                "original_filename": "generated-image.png",
+                "detected_mime_type": "image/png",
+                "origin": "generated",
+                "download_status": "downloaded",
+            },
+            {
+                "relative_path": "work-chat/artifacts/generated/workspace-notes.md",
+                "original_filename": "workspace-notes.md",
+                "source_url": "https://chatgpt.com/backend-api/estuary/content",
+                "detected_mime_type": "text/markdown",
+                "origin": "generated",
+                "download_status": "downloaded",
+            },
+        ],
+    }
+    (package / "artifact-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    document = RenderDocument(
+        title="Work artifacts",
+        turns=[
+            RenderTurn(
+                role="assistant",
+                turn_id="turn-work",
+                content="[Notes](sandbox:/workspace/scratch/fixture/workspace-notes.md)",
+                media_items=[MediaItem(kind="asset_pointer", label="sediment://file-work-image")],
+            )
+        ],
+    )
+    output_path = tmp_path / "rendered" / "work-output.md"
+    attach_local_artifacts(document=document, input_path=input_path, output_path=output_path)
+
+    turn = document.turns[0]
+    assert turn.media_items[0].metadata["canonical_id"] == "file-work-image"
+    assert turn.media_items[0].url == "work-output/artifacts/generated/generated-image.png"
+    assert turn.content == "[Notes](work-output/artifacts/generated/workspace-notes.md)"
+    assert (tmp_path / "rendered" / "work-output" / "artifacts" / "generated" / "workspace-notes.md").exists()
+    assert normalize_artifact_identifier("sediment://file-work-image") == "file-work-image"

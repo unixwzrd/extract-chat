@@ -49,6 +49,9 @@ _KNOWN_TOP_LEVEL_KEYS = {
     "context_scopes",
     "is_read_only",
     "pinned_time",
+    "context_truncation_continuation",
+    "is_study_mode",
+    "is_temporary_chat",
 }
 
 _KNOWN_CONTENT_TYPES = {

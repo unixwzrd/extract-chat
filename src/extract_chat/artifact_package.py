@@ -6,16 +6,19 @@ import csv
 import json
 import logging
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from extract_chat.schemas.render_models import RenderDocument
 
 logger = logging.getLogger(__name__)
 
 _FILE_SERVICE_PREFIX = "file-service://"
+_SEDIMENT_PREFIX = "sediment://"
+_SANDBOX_LOCATOR_RE = re.compile(r"sandbox:/(?:mnt/data|workspace/scratch)/[^\s)>\]\"']+")
 _TABLE_EXTENSIONS = {".csv", ".tsv"}
 _MAX_RENDERED_TABLE_BYTES = 1024 * 1024
 _MAX_RENDERED_TABLE_ROWS = 200
@@ -39,6 +42,8 @@ def normalize_artifact_identifier(value: Any) -> str | None:
         return None
     if text.startswith(_FILE_SERVICE_PREFIX):
         return text[len(_FILE_SERVICE_PREFIX) :]
+    if text.startswith(_SEDIMENT_PREFIX):
+        return text[len(_SEDIMENT_PREFIX) :]
     if text.startswith(("http://", "https://")):
         query_id = parse_qs(urlparse(text).query).get("id", [None])[0]
         return str(query_id) if query_id else None
@@ -80,6 +85,21 @@ def _safe_artifact_path(package_root: Path, relative_path: str) -> Path | None:
     return resolved
 
 
+def _sandbox_path_from_url(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    sandbox_path = parse_qs(urlparse(text).query).get("sandbox_path", [None])[0]
+    if not sandbox_path:
+        return None
+    path = Path(str(sandbox_path))
+    if not path.is_absolute() or ".." in path.parts:
+        return None
+    if not (str(path).startswith("/mnt/data/") or str(path).startswith("/workspace/scratch/")):
+        return None
+    return str(path)
+
+
 def load_artifact_entries(input_path: Path) -> dict[str, dict[str, Any]]:
     """Load v2, v1, or legacy media entries associated with a conversation."""
 
@@ -90,6 +110,7 @@ def load_artifact_entries(input_path: Path) -> dict[str, dict[str, Any]]:
         package_root / "media" / "media-manifest.json",
     ]
     entries: dict[str, dict[str, Any]] = {}
+    filename_entries: dict[str, dict[str, Any] | None] = {}
 
     for manifest_path in manifest_paths:
         if not manifest_path.exists():
@@ -116,16 +137,30 @@ def load_artifact_entries(input_path: Path) -> dict[str, dict[str, Any]]:
                 normalize_artifact_identifier(item.get(field))
                 for field in ("canonical_id", "file_id", "asset_pointer", "source_url", "original_url")
             }
+            canonical_identifier = next((value for value in identifiers if value is not None), None)
+            entry = {
+                "canonical_id": canonical_identifier,
+                "absolute_path": artifact_path,
+                "relative_path": str(relative_path),
+                "display_name": item.get("original_filename") or item.get("saved_filename") or artifact_path.name,
+                "original_url": item.get("source_url") or item.get("original_url"),
+                "mime_type": item.get("detected_mime_type") or item.get("mime_type") or item.get("declared_mime_type"),
+                "origin": item.get("origin"),
+            }
             for identifier in identifiers - {None}:
-                entries[str(identifier)] = {
-                    "canonical_id": identifier,
-                    "absolute_path": artifact_path,
-                    "relative_path": str(relative_path),
-                    "display_name": item.get("original_filename") or item.get("saved_filename") or artifact_path.name,
-                    "original_url": item.get("source_url") or item.get("original_url"),
-                    "mime_type": item.get("detected_mime_type") or item.get("mime_type") or item.get("declared_mime_type"),
-                    "origin": item.get("origin"),
-                }
+                entries[str(identifier)] = {**entry, "canonical_id": identifier}
+            sandbox_path = _sandbox_path_from_url(item.get("source_url") or item.get("original_url"))
+            if sandbox_path:
+                entries[f"sandbox:{sandbox_path}"] = entry
+            original_filename = item.get("original_filename")
+            if original_filename:
+                filename = str(original_filename)
+                existing = filename_entries.get(filename)
+                filename_entries[filename] = entry if existing is None and filename not in filename_entries else None
+
+    for filename, entry in filename_entries.items():
+        if entry is not None:
+            entries[f"filename:{filename}"] = entry
 
     for artifact_dir in (package_root / "artifacts", package_root / "media"):
         if not artifact_dir.exists():
@@ -173,23 +208,27 @@ def attach_local_artifacts(*, document: RenderDocument, input_path: Path, output
         return
 
     output_parent = output_path.parent if output_path is not None else input_path.parent
+
+    def materialize(match: dict[str, Any]) -> tuple[Path, str]:
+        artifact_path = Path(match["absolute_path"])
+        if output_path is not None and output_path.stem != input_path.stem and artifact_path.parent != output_parent:
+            category = match.get("origin") or "derived"
+            if category not in {"generated", "uploaded", "derived"}:
+                category = "derived"
+            destination = output_parent / output_path.stem / "artifacts" / category / artifact_path.name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if artifact_path.resolve() != destination.resolve():
+                shutil.copy2(artifact_path, destination)
+            artifact_path = destination
+        return artifact_path, os.path.relpath(artifact_path, output_parent)
+
     for turn in document.turns:
         for item in turn.media_items:
             for identifier in _media_identifiers(item):
                 match = manifest_entries.get(identifier)
                 if not match:
                     continue
-                artifact_path = Path(match["absolute_path"])
-                if output_path is not None and output_path.stem != input_path.stem and artifact_path.parent != output_parent:
-                    category = match.get("origin") or "derived"
-                    if category not in {"generated", "uploaded", "derived"}:
-                        category = "derived"
-                    destination = output_parent / output_path.stem / "artifacts" / category / artifact_path.name
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    if artifact_path.resolve() != destination.resolve():
-                        shutil.copy2(artifact_path, destination)
-                    artifact_path = destination
-                relative_link = os.path.relpath(artifact_path, output_parent)
+                artifact_path, relative_link = materialize(match)
                 if item.url:
                     item.metadata["original_url"] = item.url
                 item.metadata.update(
@@ -207,6 +246,19 @@ def attach_local_artifacts(*, document: RenderDocument, input_path: Path, output
                 item.url = relative_link
                 item.label = str(match["display_name"])
                 break
+
+        def replace_sandbox_locator(match: re.Match[str]) -> str:
+            locator = match.group(0)
+            artifact = manifest_entries.get(locator)
+            if artifact is None:
+                filename = unquote(Path(urlparse(locator).path).name)
+                artifact = manifest_entries.get(f"filename:{filename}")
+            if artifact is None:
+                return locator
+            _, relative_link = materialize(artifact)
+            return relative_link
+
+        turn.content = _SANDBOX_LOCATOR_RE.sub(replace_sandbox_locator, turn.content)
 
 
 def copy_artifact_package(input_path: Path, destination: Path, *, force: bool) -> list[Path]:

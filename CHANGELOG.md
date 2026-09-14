@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-14 - 0.7.0 - ChatGPT Work Compatibility
+
+### ChatGPT Work support
+
+- Recognize `sediment://` file pointers used by ChatGPT Work for generated and uploaded images.
+- Reconnect Work image pointers to files captured in LogGPT Plus archives.
+- Rewrite supported `sandbox:/workspace/scratch/` links to portable local artifact paths in generated Markdown and HTML.
+- Recognize current ChatGPT Work conversation fields without emitting unnecessary schema-drift warnings.
+
+### Validation
+
+- Add regression coverage for Work image identifiers, workspace-linked artifacts, local artifact copying, and current Work schema fields.
+
 ## 2026-08-24 - 0.6.0 - LogGPT Plus Archive Support
 
 ### Archive and artifact handling

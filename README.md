@@ -55,7 +55,7 @@ And it preserves things most tools lose:
 2. Run `extract-chat` on the JSON or LogGPT+ ZIP
 3. Get a clean, readable, portable transcript
 
-With **LogGPT Plus**, you can also download all media (images, audio, files), and `extract-chat` will automatically link that media into the output.
+With **LogGPT Plus**, you can also download all media (images, audio, files), and `extract-chat` will automatically link that media into the output. Version 0.7.0 adds support for generated files and uploaded attachments captured from ChatGPT Work conversations.
 
 Together, they form a complete local archive + processing pipeline for ChatGPT data.
 
@@ -111,7 +111,7 @@ pip install "git+https://github.com/unixwzrd/extract-chat.git"
 If you want a specific release:
 
 ```bash
-pip install "git+https://github.com/unixwzrd/extract-chat.git@v0.6.0"
+pip install "git+https://github.com/unixwzrd/extract-chat.git@v0.7.0"
 ```
 
 If you prefer to clone the repository first:
