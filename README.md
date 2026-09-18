@@ -158,17 +158,16 @@ HTML:
 extract-chat path/to/conversation.json --format html --output out.html
 ```
 
-Complete archive extraction from either input format with canonical `start--end--title` names:
+Complete archive extraction with UTC `start-date-end-date-title` names:
 
 ```bash
 extract-chat conversation.zip \
-  --output-dir exported \
   --format both \
   --emit-tsv \
   --chunk
 ```
 
-Pass either a standalone conversation JSON file or a LogGPT+ ZIP as the positional input. For a ZIP, downloaded artifacts are copied to `exported/<stem>/artifacts/`, and Markdown/HTML links prefer those local files. Existing CSV, TSV, and spreadsheet files remain ordinary original artifacts. Small parseable CSV/TSV artifacts may also be displayed as tables while the original download link is retained. `--emit-tsv` only derives a TSV from an embedded table when no matching downloaded table artifact is present.
+Pass either a standalone conversation JSON file or a LogGPT+ ZIP as the positional input. Without `--output-dir`, a ZIP creates a sibling directory matching the conversation stem packaged inside it so exports sort with their source archives even if the ZIP was renamed. Generated transcript, chunk, and artifact-package names use the UTC start and update dates, for example `2026-08-15-2026-09-09-this-is-the-title-of-the-chat`. Use `--output-dir` to choose a different destination. Downloaded artifacts are copied to `<destination>/<generated-stem>/artifacts/`, and Markdown/HTML links prefer those local files. Existing CSV, TSV, and spreadsheet files remain ordinary original artifacts. Small parseable CSV/TSV artifacts may also be displayed as tables while the original download link is retained. `--emit-tsv` only derives a TSV from an embedded table when no matching downloaded table artifact is present.
 
 Continuity chunks default to hybrid boundary selection with one turn of overlap. Every final Markdown part is measured after headers and overlap are added and may never exceed 524,288 UTF-8 bytes. Boundary strategy and overlap mode are independent; use `--chunk-strategy`, the byte/line/token limits, and at most one of the turn/line/byte overlap flags to select the behavior you need.
 

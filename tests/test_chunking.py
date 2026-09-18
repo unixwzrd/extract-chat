@@ -19,7 +19,7 @@ def _document(content: str, *, turns: int = 1) -> RenderDocument:
 
 
 def test_canonical_stem_uses_start_end_and_title() -> None:
-    assert canonical_conversation_stem(_document("hello")) == "2023-11-14--2023-11-15--continuity-test"
+    assert canonical_conversation_stem(_document("hello")) == "2023-11-14-2023-11-15-continuity-test"
 
 
 def test_chunking_never_exceeds_512_kib() -> None:

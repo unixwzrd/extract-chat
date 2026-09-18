@@ -43,7 +43,7 @@ def sanitize_title(value: str | None, *, max_length: int = 140) -> str:
 
 
 def canonical_conversation_stem(conversation: Any) -> str:
-    """Build ``start--end--title`` using UTC dates and stable fallbacks."""
+    """Build ``start-date-end-date-title`` using UTC dates."""
 
     start = _timestamp_date(getattr(conversation, "create_time", None)) or "unknown-date"
     end = (
@@ -52,4 +52,4 @@ def canonical_conversation_stem(conversation: Any) -> str:
         or start
     )
     title = sanitize_title(getattr(conversation, "title", None))
-    return f"{start}--{end}--{title}"
+    return f"{start}-{end}-{title}"

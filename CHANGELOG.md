@@ -13,6 +13,8 @@
 
 - Separate chunk-boundary strategy from overlap mode in CLI help, display numeric operands explicitly, and document turn, line, byte, and no-overlap choices without presenting one as the preferred mode.
 - Make the three overlap options mutually exclusive during argument parsing and retain one prior turn only as the fallback when no overlap mode is selected.
+- Use single hyphens in canonical `YYYY-MM-DD-YYYY-MM-DD-title` names instead of empty-looking double separators.
+- When a ZIP destination is not specified, write to a sibling directory matching its packaged conversation stem so exports sort chronologically even if the ZIP was renamed.
 
 ### Context handoff
 
