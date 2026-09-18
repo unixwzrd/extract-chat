@@ -70,3 +70,56 @@ def test_assistant_visible_for_standard_models() -> None:
     blocks = processor.process_conversation(conversation)
 
     assert [b["type"] for b in blocks] == ["user", "assistant"]
+
+
+def test_turn_processor_orders_branches_by_message_timestamp() -> None:
+    """Sibling branches must appear when they occurred, not in tree preorder."""
+
+    mapping: Dict[str, Turn] = {
+        "root": Turn(id="root", parent=None, children=["new-user"]),
+        "new-user": Turn(
+            id="new-user",
+            parent="root",
+            children=["new-assistant"],
+            message=Message(
+                create_time=30,
+                author=MessageAuthor(role="user"),
+                content=MessageContent(text="New question"),
+            ),
+        ),
+        "new-assistant": Turn(
+            id="new-assistant",
+            parent="new-user",
+            children=[],
+            message=Message(
+                create_time=40,
+                author=MessageAuthor(role="assistant"),
+                content=MessageContent(text="New answer"),
+            ),
+        ),
+        "old-user": Turn(
+            id="old-user",
+            parent="missing-export-node",
+            children=["old-assistant"],
+            message=Message(
+                create_time=10,
+                author=MessageAuthor(role="user"),
+                content=MessageContent(text="Old question"),
+            ),
+        ),
+        "old-assistant": Turn(
+            id="old-assistant",
+            parent="old-user",
+            children=[],
+            message=Message(
+                create_time=20,
+                author=MessageAuthor(role="assistant"),
+                content=MessageContent(text="Old answer"),
+            ),
+        ),
+    }
+
+    document = TurnProcessorV2().process_conversation(Conversation(mapping=mapping))
+
+    assert [turn.turn_id for turn in document.turns] == ["old-user", "old-assistant", "new-user", "new-assistant"]
+    assert [turn.timestamp for turn in document.turns] == [10, 20, 30, 40]

@@ -1,5 +1,7 @@
 """Markdown formatter regression tests."""
 
+from datetime import datetime
+
 from extract_chat.formatters.markdown_formatter import MarkdownFormatter
 
 
@@ -41,3 +43,11 @@ def test_markdown_formatter_handles_internal_dialogue_dict() -> None:
     assert "Plan next action" in output
     assert "Search Queries" in output
 
+
+def test_timestamp_uses_readable_local_time_with_milliseconds() -> None:
+    formatter = MarkdownFormatter()
+
+    assert formatter._format_timestamp(datetime(2026, 9, 18, 14, 29, 58, 987654)) == "2026-09-18 14:29:58.987"
+    assert formatter._format_timestamp(1_700_000_000.123) == datetime.fromtimestamp(1_700_000_000.123).strftime(
+        "%Y-%m-%d %H:%M:%S.%f"
+    )[:-3]

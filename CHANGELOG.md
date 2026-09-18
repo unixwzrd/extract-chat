@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-09-18 - 0.7.5 - Chronology and Continuity Repairs
+
+### Conversation ordering and rendering
+
+- Render exported messages in stable timestamp order instead of conversation-tree preorder so older sibling branches cannot appear after newer turns.
+- Display Unix timestamps as local time in `YYYY-MM-DD HH:MM:SS.nnn` format across Markdown and HTML output.
+- Preserve a blank Markdown block boundary between complete turns in continuity chunks, including after media and tool `<details>` blocks.
+- When `--force` regenerates a bundle with a different chunk count, remove obsolete numbered chunks for that same bundle without touching unrelated files.
+
+### CLI help
+
+- Separate chunk-boundary strategy from overlap mode in CLI help, display numeric operands explicitly, and document turn, line, byte, and no-overlap choices without presenting one as the preferred mode.
+- Make the three overlap options mutually exclusive during argument parsing and retain one prior turn only as the fallback when no overlap mode is selected.
+
+### Context handoff
+
+- Generate `context-move-instructions.md` in every chunk directory using the actual chunk count, filenames, boundary strategy, overlap mode, byte ceiling, and upload plan.
+- Add `--chunk-upload-batch-size FILES` so generated multi-batch instructions match the receiving service's current file limit without hand editing.
+- Direct receiving models to deduplicate overlap, reconstruct working state without unsolicited summaries, preserve unresolved conflicts, treat archived instructions as historical rather than authorized actions, and report missing files exactly.
+
+### Artifact copying
+
+- Treat an already-materialized artifact with identical bytes as the same file instead of a forbidden overwrite when canonical output naming differs from the archive's internal JSON stem.
+- Preflight genuinely different artifact collisions before writing rendered output, while continuing to require `--force` before replacing them.
+- Report the complete packaged artifact count, split between newly copied and already materialized files, and report package metadata separately.
+
 ## 2026-09-14 - 0.7.0 - ChatGPT Work Compatibility
 
 ### ChatGPT Work support

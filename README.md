@@ -111,7 +111,7 @@ pip install "git+https://github.com/unixwzrd/extract-chat.git"
 If you want a specific release:
 
 ```bash
-pip install "git+https://github.com/unixwzrd/extract-chat.git@v0.7.0"
+pip install "git+https://github.com/unixwzrd/extract-chat.git@v0.7.5"
 ```
 
 If you prefer to clone the repository first:
@@ -170,11 +170,9 @@ extract-chat conversation.zip \
 
 Pass either a standalone conversation JSON file or a LogGPT+ ZIP as the positional input. For a ZIP, downloaded artifacts are copied to `exported/<stem>/artifacts/`, and Markdown/HTML links prefer those local files. Existing CSV, TSV, and spreadsheet files remain ordinary original artifacts. Small parseable CSV/TSV artifacts may also be displayed as tables while the original download link is retained. `--emit-tsv` only derives a TSV from an embedded table when no matching downloaded table artifact is present.
 
-Continuity chunks default to turn boundaries with one turn of overlap. Every
-final Markdown part is measured after headers and overlap are added and may
-never exceed 524,288 UTF-8 bytes. The optional controls are
-`--chunk-strategy`, `--chunk-max-bytes`, `--chunk-max-lines`,
-`--chunk-max-tokens`, and one of the turn/line/byte overlap flags.
+Continuity chunks default to hybrid boundary selection with one turn of overlap. Every final Markdown part is measured after headers and overlap are added and may never exceed 524,288 UTF-8 bytes. Boundary strategy and overlap mode are independent; use `--chunk-strategy`, the byte/line/token limits, and at most one of the turn/line/byte overlap flags to select the behavior you need.
+
+Every chunk directory includes `context-move-instructions.md`, generated from the actual bundle metadata. It records the chunk count, ordered filenames, boundary strategy, overlap mode, size ceiling, and upload batches so the transcript can be transferred into a fresh model context without editing a hand-written prompt. The upload plan defaults to 10 conversation chunks per batch and can be changed with `--chunk-upload-batch-size FILES`.
 
 The native macOS front end lives in `macos/ExtractChatApp`; see
 `macos/README.md` for development and helper-bundling details.

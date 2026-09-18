@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import csv
+import filecmp
 import json
 import logging
 import os
 import re
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
@@ -23,6 +25,22 @@ _TABLE_EXTENSIONS = {".csv", ".tsv"}
 _MAX_RENDERED_TABLE_BYTES = 1024 * 1024
 _MAX_RENDERED_TABLE_ROWS = 200
 _MAX_RENDERED_TABLE_COLUMNS = 50
+
+
+@dataclass(frozen=True)
+class ArtifactCopyResult:
+    artifact_copied: tuple[Path, ...] = ()
+    artifact_reused: tuple[Path, ...] = ()
+    metadata_copied: tuple[Path, ...] = ()
+    metadata_reused: tuple[Path, ...] = ()
+
+    @property
+    def artifact_total(self) -> int:
+        return len(self.artifact_copied) + len(self.artifact_reused)
+
+    @property
+    def metadata_total(self) -> int:
+        return len(self.metadata_copied) + len(self.metadata_reused)
 
 
 def normalize_artifact_identifier(value: Any) -> str | None:
@@ -261,20 +279,55 @@ def attach_local_artifacts(*, document: RenderDocument, input_path: Path, output
         turn.content = _SANDBOX_LOCATOR_RE.sub(replace_sandbox_locator, turn.content)
 
 
-def copy_artifact_package(input_path: Path, destination: Path, *, force: bool) -> list[Path]:
-    """Copy a captured artifact package beside rendered output."""
-
+def _artifact_copy_plan(input_path: Path, destination: Path) -> list[tuple[Path, Path]]:
     source_root = input_path.parent / input_path.stem
     if not source_root.exists() or source_root.resolve() == destination.resolve():
         return []
-    copied: list[Path] = []
+    plan: list[tuple[Path, Path]] = []
     for source in source_root.rglob("*"):
-        if not source.is_file():
-            continue
-        target = destination / source.relative_to(source_root)
-        if target.exists() and not force:
+        if source.is_file():
+            plan.append((source, destination / source.relative_to(source_root)))
+    return plan
+
+
+def _same_file_content(source: Path, target: Path) -> bool:
+    return target.is_file() and source.stat().st_size == target.stat().st_size and filecmp.cmp(source, target, shallow=False)
+
+
+def validate_artifact_package_destination(input_path: Path, destination: Path, *, force: bool) -> None:
+    """Refuse conflicting artifact targets before rendering any output."""
+
+    if force:
+        return
+    for source, target in _artifact_copy_plan(input_path, destination):
+        if target.exists() and not _same_file_content(source, target):
             raise RuntimeError(f"Refusing to overwrite existing artifact: {target} (use --force)")
+
+
+def copy_artifact_package(input_path: Path, destination: Path, *, force: bool) -> ArtifactCopyResult:
+    """Copy a captured artifact package beside rendered output."""
+
+    plan = _artifact_copy_plan(input_path, destination)
+    validate_artifact_package_destination(input_path, destination, force=force)
+    artifact_copied: list[Path] = []
+    artifact_reused: list[Path] = []
+    metadata_copied: list[Path] = []
+    metadata_reused: list[Path] = []
+    for source, target in plan:
+        relative = target.relative_to(destination)
+        is_artifact = bool(relative.parts) and relative.parts[0] in {"artifacts", "media"} and target.name not in {
+            "artifact-manifest.json",
+            "media-manifest.json",
+        }
+        if target.exists() and _same_file_content(source, target):
+            (artifact_reused if is_artifact else metadata_reused).append(target)
+            continue
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
-        copied.append(target)
-    return copied
+        (artifact_copied if is_artifact else metadata_copied).append(target)
+    return ArtifactCopyResult(
+        artifact_copied=tuple(artifact_copied),
+        artifact_reused=tuple(artifact_reused),
+        metadata_copied=tuple(metadata_copied),
+        metadata_reused=tuple(metadata_reused),
+    )

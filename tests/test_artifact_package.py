@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from extract_chat.artifact_package import attach_local_artifacts, load_artifact_entries, normalize_artifact_identifier
+from extract_chat.artifact_package import attach_local_artifacts, copy_artifact_package, load_artifact_entries, normalize_artifact_identifier
 from extract_chat.formatters.html_formatter import HTMLFormatter
 from extract_chat.formatters.markdown_formatter import MarkdownFormatter
 from extract_chat.schemas.render_models import MediaItem, RenderDocument, RenderTurn
@@ -140,3 +140,48 @@ def test_work_artifacts_attach_by_sediment_id_and_workspace_link(tmp_path: Path)
     assert turn.content == "[Notes](work-output/artifacts/generated/workspace-notes.md)"
     assert (tmp_path / "rendered" / "work-output" / "artifacts" / "generated" / "workspace-notes.md").exists()
     assert normalize_artifact_identifier("sediment://file-work-image") == "file-work-image"
+
+
+def test_copy_artifact_package_skips_identical_materialized_file(tmp_path: Path) -> None:
+    input_path = tmp_path / "source.json"
+    input_path.write_text("{}", encoding="utf-8")
+    source_file = tmp_path / "source" / "artifacts" / "generated" / "image.png"
+    source_file.parent.mkdir(parents=True)
+    source_file.write_bytes(b"same-image")
+    source_manifest = tmp_path / "source" / "artifact-manifest.json"
+    source_manifest.write_text("{}", encoding="utf-8")
+
+    destination = tmp_path / "rendered"
+    target = destination / "artifacts" / "generated" / "image.png"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"same-image")
+
+    result = copy_artifact_package(input_path, destination, force=False)
+    assert result.artifact_copied == ()
+    assert result.artifact_reused == (target,)
+    assert result.artifact_total == 1
+    assert result.metadata_copied == (destination / "artifact-manifest.json",)
+    assert result.metadata_reused == ()
+    assert result.metadata_total == 1
+    assert target.read_bytes() == b"same-image"
+
+
+def test_copy_artifact_package_refuses_different_existing_file(tmp_path: Path) -> None:
+    input_path = tmp_path / "source.json"
+    input_path.write_text("{}", encoding="utf-8")
+    source_file = tmp_path / "source" / "artifacts" / "generated" / "image.png"
+    source_file.parent.mkdir(parents=True)
+    source_file.write_bytes(b"new-image")
+
+    destination = tmp_path / "rendered"
+    target = destination / "artifacts" / "generated" / "image.png"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"existing-image")
+
+    try:
+        copy_artifact_package(input_path, destination, force=False)
+    except RuntimeError as exc:
+        assert "Refusing to overwrite existing artifact" in str(exc)
+    else:
+        raise AssertionError("Expected a different existing artifact to be protected")
+    assert target.read_bytes() == b"existing-image"
