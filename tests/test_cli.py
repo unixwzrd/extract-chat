@@ -445,7 +445,7 @@ def test_cli_reads_plus_zip_and_reports_complete_artifact_package(tmp_path: Path
 
     destination = tmp_path / "out"
     run_cli(["extract-chat", str(archive_path), "--output-dir", str(destination), "--format", "both"])
-    stem = "2023-11-14--2023-11-15--plus-archive"
+    stem = "2023-11-14-2023-11-15-plus-archive"
     assert (destination / f"{stem}.md").exists()
     assert (destination / f"{stem}.html").exists()
     assert (destination / stem / "artifacts/uploaded/upload.png").read_bytes() == b"png"
@@ -453,6 +453,43 @@ def test_cli_reads_plus_zip_and_reports_complete_artifact_package(tmp_path: Path
     assert "Packaged 1 artifact file(s)" in caplog.text
     assert "0 copied, 1 already materialized" in caplog.text
     assert "1 package metadata file(s) also present" in caplog.text
+
+
+def test_zip_defaults_to_archive_named_sibling_directory(tmp_path: Path) -> None:
+    payload = {
+        "title": "Sorted Archive",
+        "create_time": 1_700_000_000,
+        "update_time": 1_700_086_400,
+        "mapping": {
+            "root": {"id": "root", "children": ["user-1"]},
+            "user-1": {
+                "id": "user-1",
+                "parent": "root",
+                "children": [],
+                "message": {
+                    "id": "message-1",
+                    "author": {"role": "user", "metadata": {}},
+                    "content": {"content_type": "text", "parts": ["Hello"]},
+                    "create_time": 1_700_000_001,
+                    "metadata": {},
+                    "recipient": "all",
+                },
+            },
+        },
+    }
+    archive_path = tmp_path / "renamed-download.zip"
+    archive_stem = "2023-11-14-2023-11-15-sorted-archive"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr(f"{archive_stem}.json", json.dumps(payload))
+
+    run_cli(["extract-chat", str(archive_path), "--format", "markdown", "--chunk"])
+
+    destination = tmp_path / archive_stem
+    stem = "2023-11-14-2023-11-15-sorted-archive"
+    assert (destination / f"{stem}.md").exists()
+    chunk_dir = destination / f"{stem}-chunks"
+    assert chunk_dir.is_dir()
+    assert list(chunk_dir.glob(f"{stem}-part-*.md"))
 
 
 def test_maybe_file_schema_issue_skips_duplicate(monkeypatch) -> None:

@@ -848,7 +848,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--log-file", help="Optional path to write logs to a file.")
     parser.add_argument("--force", action="store_true", help="Force overwrite existing files.")
-    parser.add_argument("--output-dir", help="Destination directory; output names use start--end--title.")
+    parser.add_argument(
+        "--output-dir",
+        help=(
+            "Destination directory. ZIP input defaults to a sibling directory matching its conversation stem; "
+            "generated names include UTC start and update dates."
+        ),
+    )
     parser.add_argument("--artifact-dir", help="Artifact directory (default: OUTPUT_DIR/<conversation-stem>).")
     parser.add_argument("--emit-tsv", action="store_true", help="Convert embedded HTML tables to TSV artifacts.")
     parser.add_argument("--chunk", action="store_true", help="Write upload-safe Markdown continuity chunks.")
@@ -989,12 +995,12 @@ def main() -> None:
             upload_batch_size=args.chunk_upload_batch_size,
         )
 
-    def run(source: str) -> list[ExportResult]:
+    def run(source: str, *, default_output_dir: Path | None = None) -> list[ExportResult]:
         output_stem = Path(source).stem
-        if args.output_dir:
+        destination_dir = Path(args.output_dir).expanduser() if args.output_dir else default_output_dir
+        if destination_dir is not None:
             conversation, _ = _load_conversation(source, verbose=False, schema_warning_detail="summary")
             output_stem = canonical_conversation_stem(conversation)
-        destination_dir = Path(args.output_dir).expanduser() if args.output_dir else None
         package_dir = Path(args.artifact_dir).expanduser() if args.artifact_dir else (destination_dir / output_stem if destination_dir else None)
         if package_dir is not None:
             validate_artifact_package_destination(Path(source), package_dir, force=args.force)
@@ -1056,9 +1062,13 @@ def main() -> None:
         return results
 
     if Path(args.input_file).suffix.lower() == ".zip":
+        archive_path = Path(args.input_file).expanduser()
         with tempfile.TemporaryDirectory(prefix="extract-chat-") as temp_dir:
-            extracted = extract_archive(Path(args.input_file), Path(temp_dir))
-            results = run(str(extracted.json_path))
+            extracted = extract_archive(archive_path, Path(temp_dir))
+            default_output_dir = (
+                archive_path.parent / extracted.json_path.stem if not args.output_dir and not args.output else None
+            )
+            results = run(str(extracted.json_path), default_output_dir=default_output_dir)
     else:
         results = run(args.input_file)
     if any(result.status == "failed" for result in results):

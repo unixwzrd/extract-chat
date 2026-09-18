@@ -3,7 +3,7 @@
 ## Implemented boundaries
 
 - `archive.py` owns safe LogGPT+ ZIP ingestion and rejects traversal and symlink members.
-- `naming.py` owns canonical UTC `start--end--title` names.
+- `naming.py` owns canonical UTC `start-date-end-date-title` names.
 - `chunking.py` owns deterministic Markdown continuity chunks, manifests, hashes, overlap, and the hard 524,288-byte final-file ceiling.
 - `artifact_package.py` owns manifest v2/v1/legacy package discovery, safe local-path resolution, artifact placement, and lightweight table previews.
 - `tables.py` owns HTML-table to TSV derivation when the archive does not already contain an equivalent table artifact.

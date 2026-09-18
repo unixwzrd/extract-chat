@@ -19,8 +19,8 @@ extract-chat conversation.json --output conversation.md
 # HTML with optional CSS override
 extract-chat conversation.json --format html --css-file site.css --output conversation.html
 
-# LogGPT+ ZIP with packaged artifacts
-extract-chat conversation.zip --output-dir exported --format both
+# LogGPT+ ZIP with packaged artifacts in ./conversation/
+extract-chat conversation.zip --format both
 
 # Jekyll section export (writes multiple files into a directory)
 extract-chat conversation.json \
@@ -39,7 +39,7 @@ extract-chat conversation.json \
 | `-c, --css-file` | Optional CSS file path applied to HTML output. |
 | `-V, --version` | Show the installed `extract-chat` version and exit. |
 | `--force` | Overwrite the destination if it already exists. |
-| `--output-dir` | Destination directory using canonical conversation names. |
+| `--output-dir` | Override the destination directory. ZIP input otherwise uses a sibling directory matching the packaged conversation stem. |
 | `--artifact-dir` | Override the directory used for copied artifacts. |
 | `--emit-tsv` | Derive TSV files from embedded HTML tables when no equivalent artifact exists. |
 | `--chunk` | Write upload-safe Markdown continuity chunks. |
