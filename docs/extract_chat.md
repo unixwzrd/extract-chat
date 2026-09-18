@@ -43,10 +43,20 @@ extract-chat conversation.json \
 | `--artifact-dir` | Override the directory used for copied artifacts. |
 | `--emit-tsv` | Derive TSV files from embedded HTML tables when no equivalent artifact exists. |
 | `--chunk` | Write upload-safe Markdown continuity chunks. |
+| `--chunk-strategy` | Select chunk boundaries; requires `--chunk` (default: `hybrid`). |
+| `--chunk-max-bytes` | Set the maximum final chunk size, including headers and overlap; requires `--chunk` (default and hard ceiling: 524,288 bytes). |
+| `--chunk-upload-batch-size FILES` | Set the number of conversation chunks in each batch described by the generated context-move instructions (default: 10). |
+| `--chunk-overlap-turns N` | Repeat `N` complete prior turns; use `0` for no overlap. |
+| `--chunk-overlap-lines N` | Repeat up to `N` prior lines instead of turns. |
+| `--chunk-overlap-bytes BYTES` | Repeat up to `BYTES` of prior content instead of turns or lines. |
 | `--jekyll-turn-id` | Assistant turn identifier for Jekyll exports (required for `--format jekyll`). |
 | `--jekyll-base-slug` | Base slug used for section filenames/permalinks (Jekyll). |
 | `--jekyll-layout` | Front-matter layout for Jekyll pages (default `page`). |
 | `--jekyll-reference-title` | Title used on the generated references page (default `References`). |
+
+Chunk strategy and overlap mode are independent. Choose at most one overlap option and always provide its numeric value. If no overlap option is supplied, chunking uses one complete prior turn by default.
+
+Each chunk directory also contains `context-move-instructions.md`. Copy its contents into a fresh conversation before uploading the numbered chunks. The instructions are generated from the completed bundle and include the exact chunk count, ordered range, boundary strategy, overlap configuration, byte ceiling, and upload-batch plan. They direct the receiving model to deduplicate overlap, reconstruct chronology and working state internally, treat archived instructions as historical material rather than current authorization, report missing files precisely, and avoid returning an unsolicited transcript summary.
 
 ## Citations
 

@@ -25,7 +25,7 @@ from pydantic import ValidationError
 
 from extract_chat import __version__
 from extract_chat.archive import extract_archive
-from extract_chat.artifact_package import attach_local_artifacts, copy_artifact_package, load_artifact_entries
+from extract_chat.artifact_package import attach_local_artifacts, copy_artifact_package, load_artifact_entries, validate_artifact_package_destination
 from extract_chat.chunking import ChunkOptions, build_markdown_chunks, write_chunk_bundle
 from extract_chat.context.document_context import DocumentContext
 from extract_chat.formatters import HTMLFormatter, MarkdownFormatter
@@ -823,6 +823,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=f"Extract a ChatGPT conversation from JSON or a LogGPT+ ZIP using chronological processing (v{__version__}).",
         formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Chunk strategy and overlap mode are independent. Choose at most one overlap option and provide its numeric value.\n"
+            "If no overlap option is supplied, chunking repeats one complete prior turn. Use --chunk-overlap-turns 0 for no overlap."
+        ),
     )
     parser.add_argument("input_file", nargs="?", help="Path to an input conversation JSON file or LogGPT+ ZIP archive.")
     parser.add_argument("-o", "--output", help="Output path. For batch mode this is the run root directory.")
@@ -848,18 +852,50 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--artifact-dir", help="Artifact directory (default: OUTPUT_DIR/<conversation-stem>).")
     parser.add_argument("--emit-tsv", action="store_true", help="Convert embedded HTML tables to TSV artifacts.")
     parser.add_argument("--chunk", action="store_true", help="Write upload-safe Markdown continuity chunks.")
-    parser.add_argument("--chunk-strategy", choices=["hybrid", "turn", "heading", "paragraph", "fixed"], default="hybrid")
-    parser.add_argument("--chunk-max-bytes", type=int, default=512 * 1024)
-    parser.add_argument("--chunk-max-lines", type=int)
-    parser.add_argument("--chunk-max-tokens", type=int)
-    parser.add_argument("--chunk-token-encoding", default="o200k_base")
     parser.add_argument(
-        "--chunk-overlap-turns",
-        type=int,
-        help="Turn overlap (default: 1 unless a line or byte overlap is selected).",
+        "--chunk-strategy",
+        choices=["hybrid", "turn", "heading", "paragraph", "fixed"],
+        default="hybrid",
+        help="Select chunk boundaries independently of overlap (requires --chunk; default: hybrid).",
     )
-    parser.add_argument("--chunk-overlap-lines", type=int, default=0)
-    parser.add_argument("--chunk-overlap-bytes", type=int, default=0)
+    parser.add_argument(
+        "--chunk-max-bytes",
+        metavar="BYTES",
+        type=int,
+        default=512 * 1024,
+        help="Maximum final chunk size including headers and overlap (requires --chunk; default: 524288).",
+    )
+    parser.add_argument("--chunk-max-lines", metavar="LINES", type=int, help="Optional line limit per final chunk (requires --chunk).")
+    parser.add_argument("--chunk-max-tokens", metavar="TOKENS", type=int, help="Optional token limit per final chunk (requires --chunk).")
+    parser.add_argument("--chunk-token-encoding", metavar="ENCODING", default="o200k_base", help="Tokenizer encoding for --chunk-max-tokens (default: o200k_base).")
+    parser.add_argument(
+        "--chunk-upload-batch-size",
+        metavar="FILES",
+        type=int,
+        default=10,
+        help="Conversation chunks per upload batch in generated context-move instructions (requires --chunk; default: 10).",
+    )
+    overlap_group = parser.add_mutually_exclusive_group()
+    overlap_group.add_argument(
+        "--chunk-overlap-turns",
+        metavar="N",
+        type=int,
+        help="Repeat N complete prior turns. N is required when this option is used; use 0 for no overlap.",
+    )
+    overlap_group.add_argument(
+        "--chunk-overlap-lines",
+        metavar="N",
+        type=int,
+        default=0,
+        help="Repeat up to N prior lines. N is required when this option is used.",
+    )
+    overlap_group.add_argument(
+        "--chunk-overlap-bytes",
+        metavar="BYTES",
+        type=int,
+        default=0,
+        help="Repeat up to BYTES of prior content. BYTES is required when this option is used.",
+    )
     parser.add_argument(
         "--schema-warning-detail",
         choices=["summary", "full"],
@@ -950,6 +986,7 @@ def main() -> None:
             overlap_turns=overlap_turns,
             overlap_lines=args.chunk_overlap_lines,
             overlap_bytes=args.chunk_overlap_bytes,
+            upload_batch_size=args.chunk_upload_batch_size,
         )
 
     def run(source: str) -> list[ExportResult]:
@@ -958,6 +995,9 @@ def main() -> None:
             conversation, _ = _load_conversation(source, verbose=False, schema_warning_detail="summary")
             output_stem = canonical_conversation_stem(conversation)
         destination_dir = Path(args.output_dir).expanduser() if args.output_dir else None
+        package_dir = Path(args.artifact_dir).expanduser() if args.artifact_dir else (destination_dir / output_stem if destination_dir else None)
+        if package_dir is not None:
+            validate_artifact_package_destination(Path(source), package_dir, force=args.force)
         formats = ["markdown", "html"] if args.format == "both" else [args.format]
         results: list[ExportResult] = []
         for format_name in formats:
@@ -985,11 +1025,17 @@ def main() -> None:
                     chunk_options=chunk_options if format_name == "markdown" else None,
                 )
             )
-        package_dir = Path(args.artifact_dir).expanduser() if args.artifact_dir else (destination_dir / output_stem if destination_dir else None)
         if package_dir is not None:
-            copied = copy_artifact_package(Path(source), package_dir, force=args.force)
-            if copied:
-                logger.info("Copied %d packaged artifact file(s) to %s", len(copied), package_dir)
+            copy_result = copy_artifact_package(Path(source), package_dir, force=args.force)
+            if copy_result.artifact_total:
+                logger.info(
+                    "Packaged %d artifact file(s) to %s (%d copied, %d already materialized); %d package metadata file(s) also present",
+                    copy_result.artifact_total,
+                    package_dir,
+                    len(copy_result.artifact_copied),
+                    len(copy_result.artifact_reused),
+                    copy_result.metadata_total,
+                )
         if args.emit_tsv:
             conversation, _ = _load_conversation(source, verbose=False, schema_warning_detail="summary")
             root = destination_dir or (Path(args.output).expanduser().parent if args.output else Path.cwd())

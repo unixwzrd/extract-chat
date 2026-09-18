@@ -6,6 +6,7 @@ This module defines the base classes and interfaces for all output formatters.
 
 import re
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any, Dict, Optional
 
 import ftfy
@@ -246,8 +247,12 @@ class BaseFormatter(ABC):
             return ""
         
         try:
-            return timestamp.strftime('%Y-%m-%d %H:%M:%S')
-        except (AttributeError, TypeError):
+            if isinstance(timestamp, datetime):
+                value = timestamp.astimezone() if timestamp.tzinfo is not None else timestamp
+            else:
+                value = datetime.fromtimestamp(float(timestamp))
+            return value.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+        except (AttributeError, OSError, OverflowError, TypeError, ValueError):
             return str(timestamp)
 
     def _extract_conversation_context_data(self, block: Dict[str, Any]) -> Dict[str, str]:

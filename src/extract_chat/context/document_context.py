@@ -150,6 +150,33 @@ class DocumentContext:
             if turn is not None:
                 yield turn_id, turn, level
 
+    @staticmethod
+    def _turn_timestamp(turn: Any) -> Optional[float]:
+        """Return the message timestamp, falling back to the containing node."""
+
+        try:
+            message = turn.get("message") if isinstance(turn, dict) else getattr(turn, "message", None)
+            value = message.get("create_time") if isinstance(message, dict) else getattr(message, "create_time", None)
+            if value is None:
+                value = turn.get("create_time") if isinstance(turn, dict) else getattr(turn, "create_time", None)
+            return float(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def iter_chronological(self) -> Iterator[Tuple[str, Any, int]]:
+        """Yield every exported node in stable message-timestamp order."""
+
+        indexed_turns = list(enumerate((self.turn_index or {}).items()))
+        indexed_turns.sort(
+            key=lambda item: (
+                self._turn_timestamp(item[1][1]) is None,
+                self._turn_timestamp(item[1][1]) or 0.0,
+                item[0],
+            )
+        )
+        for _index, (turn_id, turn) in indexed_turns:
+            yield turn_id, turn, 0
+
     # ---- Message/content helpers ----
     def extract_text_from_content(self, content: Any) -> str:
         """Extract human-readable text from a message content object or raw text.

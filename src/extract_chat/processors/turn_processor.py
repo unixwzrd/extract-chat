@@ -45,13 +45,8 @@ class TurnProcessorV2:
     def process_conversation(self, conversation: Any) -> RenderDocument:
         """Process the full conversation into a typed render document."""
 
-        dc = DocumentContext.get()
-        if dc:
-            ordered_turns = [(turn_id, turn, level) for turn_id, turn, level in dc.iter_preorder()]
-        else:
-            ordered_turns = []
-            for turn_id, turn in getattr(conversation, "mapping", {}).items():
-                ordered_turns.append((turn_id, turn, 0))
+        dc = DocumentContext.get() or DocumentContext(conversation=conversation)
+        ordered_turns = list(dc.iter_chronological())
 
         document = RenderDocument(
             title=getattr(conversation, "title", None),
@@ -372,6 +367,8 @@ class TurnProcessorV2:
         text = str(value or "")
         if text.startswith("file-service://"):
             return text[len("file-service://") :]
+        if text.startswith("sediment://"):
+            return text[len("sediment://") :]
         if text.startswith(("file-", "file_")):
             return text
         return None

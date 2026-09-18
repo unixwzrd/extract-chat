@@ -19,6 +19,52 @@ def run_cli(arguments: list[str]) -> None:
         sys.argv = original
 
 
+def test_chunk_help_separates_strategy_from_overlap_modes() -> None:
+    help_text = cli.build_parser().format_help()
+
+    assert "Select chunk boundaries independently of overlap" in help_text
+    assert "--chunk-overlap-turns N" in help_text
+    assert "--chunk-overlap-lines N" in help_text
+    assert "--chunk-overlap-bytes BYTES" in help_text
+    assert "--chunk-upload-batch-size FILES" in help_text
+    assert "N is required when this option is used" in help_text
+    assert "use 0 for no overlap" in help_text
+    assert "If no overlap option is supplied" in help_text
+
+
+def test_chunk_overlap_modes_are_mutually_exclusive(capsys) -> None:
+    parser = cli.build_parser()
+
+    try:
+        parser.parse_args(["--chunk-overlap-lines", "10", "--chunk-overlap-bytes", "100"])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("Expected mutually exclusive overlap modes to stop argument parsing")
+
+    assert "not allowed with argument" in capsys.readouterr().err
+
+
+def test_cli_writes_generated_context_move_instructions(tmp_path: Path) -> None:
+    output_path = tmp_path / "conversation.md"
+    args = [
+        "extract-chat",
+        str(SAMPLE_PATH),
+        "--output",
+        str(output_path),
+        "--chunk",
+        "--chunk-upload-batch-size",
+        "3",
+    ]
+    run_cli(args)
+
+    instructions_path = tmp_path / "conversation-chunks" / "context-move-instructions.md"
+    assert instructions_path.exists()
+    instructions = instructions_path.read_text(encoding="utf-8")
+    assert "up to 3 conversation chunks per batch" in instructions
+    assert "Numbered conversation chunks:" in instructions
+
+
 def test_cli_supports_jekyll_format(tmp_path: Path) -> None:
     output_dir = tmp_path / "jekyll"
     args = [
@@ -235,6 +281,18 @@ def test_schema_diagnostics_accepts_common_newer_content_types() -> None:
     assert "unknown_content_type" not in codes
 
 
+def test_schema_diagnostics_accepts_chatgpt_work_top_level_fields() -> None:
+    payload = {
+        "title": "Work conversation",
+        "mapping": {},
+        "context_truncation_continuation": None,
+        "is_study_mode": False,
+        "is_temporary_chat": False,
+    }
+    diagnostics = analyze_raw_conversation(payload)
+    assert "unknown_top_level_key" not in {warning.code for warning in diagnostics.warnings}
+
+
 def test_cli_writes_media_inventory_when_requested(tmp_path: Path) -> None:
     payload = {
         "title": "Media Export",
@@ -358,7 +416,7 @@ def test_cli_prefers_local_media_bundle_links_when_present(tmp_path: Path) -> No
     assert "- Remote: `https://chatgpt.com/backend-api/estuary/content?id=file_abc123&sig=xyz`" in rendered
 
 
-def test_cli_reads_plus_zip_and_copies_artifacts(tmp_path: Path) -> None:
+def test_cli_reads_plus_zip_and_reports_complete_artifact_package(tmp_path: Path, caplog) -> None:
     payload = {
         "title": "Plus Archive",
         "create_time": 1_700_000_000,
@@ -386,12 +444,15 @@ def test_cli_reads_plus_zip_and_copies_artifacts(tmp_path: Path) -> None:
         archive.writestr("plus/artifacts/uploaded/upload.png", b"png")
 
     destination = tmp_path / "out"
-    run_cli(["extract-chat", str(archive_path), "--output-dir", str(destination), "--format", "both", "--force"])
+    run_cli(["extract-chat", str(archive_path), "--output-dir", str(destination), "--format", "both"])
     stem = "2023-11-14--2023-11-15--plus-archive"
     assert (destination / f"{stem}.md").exists()
     assert (destination / f"{stem}.html").exists()
     assert (destination / stem / "artifacts/uploaded/upload.png").read_bytes() == b"png"
     assert f"{stem}/artifacts/uploaded/upload.png" in (destination / f"{stem}.md").read_text()
+    assert "Packaged 1 artifact file(s)" in caplog.text
+    assert "0 copied, 1 already materialized" in caplog.text
+    assert "1 package metadata file(s) also present" in caplog.text
 
 
 def test_maybe_file_schema_issue_skips_duplicate(monkeypatch) -> None:
