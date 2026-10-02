@@ -111,7 +111,7 @@ pip install "git+https://github.com/unixwzrd/extract-chat.git"
 If you want a specific release:
 
 ```bash
-pip install "git+https://github.com/unixwzrd/extract-chat.git@v0.7.5"
+pip install "git+https://github.com/unixwzrd/extract-chat.git@v0.7.6"
 ```
 
 If you prefer to clone the repository first:

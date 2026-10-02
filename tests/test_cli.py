@@ -293,6 +293,29 @@ def test_schema_diagnostics_accepts_chatgpt_work_top_level_fields() -> None:
     assert "unknown_top_level_key" not in {warning.code for warning in diagnostics.warnings}
 
 
+def test_schema_diagnostics_accepts_null_sectioned_conversation() -> None:
+    payload = {
+        "title": "Sectioned conversation placeholder",
+        "mapping": {},
+        "sectioned_conversation": None,
+    }
+
+    diagnostics = analyze_raw_conversation(payload)
+    assert not diagnostics.warnings
+
+
+def test_schema_diagnostics_warns_when_sectioned_conversation_has_content() -> None:
+    payload = {
+        "title": "Sectioned conversation",
+        "mapping": {},
+        "sectioned_conversation": {"sections": []},
+    }
+
+    diagnostics = analyze_raw_conversation(payload)
+    assert [warning.code for warning in diagnostics.warnings] == ["unsupported_sectioned_conversation"]
+    assert diagnostics.warnings[0].fallback_used is True
+
+
 def test_cli_writes_media_inventory_when_requested(tmp_path: Path) -> None:
     payload = {
         "title": "Media Export",
@@ -453,6 +476,24 @@ def test_cli_reads_plus_zip_and_reports_complete_artifact_package(tmp_path: Path
     assert "Packaged 1 artifact file(s)" in caplog.text
     assert "0 copied, 1 already materialized" in caplog.text
     assert "1 package metadata file(s) also present" in caplog.text
+
+
+def test_zip_schema_warning_is_logged_once(tmp_path: Path, caplog) -> None:
+    payload = {
+        "title": "Schema Warning Archive",
+        "create_time": 1_700_000_000,
+        "update_time": 1_700_086_400,
+        "mapping": {},
+        "unexpected_export_shape": {"value": True},
+    }
+    archive_path = tmp_path / "schema-warning.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("schema-warning.json", json.dumps(payload))
+
+    destination = tmp_path / "out"
+    run_cli(["extract-chat", str(archive_path), "--output-dir", str(destination), "--format", "markdown"])
+
+    assert caplog.text.count("Schema drift was detected") == 1
 
 
 def test_zip_defaults_to_archive_named_sibling_directory(tmp_path: Path) -> None:

@@ -388,6 +388,7 @@ def _load_conversation(
     *,
     verbose: bool,
     schema_warning_detail: str,
+    emit_schema_warnings: bool = True,
 ) -> tuple[Conversation, SchemaDiagnostics]:
     with open(input_file, "r", encoding="utf-8") as handle:
         raw_text = handle.read()
@@ -395,7 +396,8 @@ def _load_conversation(
     raw_obj = json.loads(raw_text)
     diagnostics = analyze_raw_conversation(raw_obj)
     raw_obj = normalize_raw_conversation(raw_obj, diagnostics)
-    _emit_schema_warnings(diagnostics, input_path=Path(input_file), detail=schema_warning_detail)
+    if emit_schema_warnings:
+        _emit_schema_warnings(diagnostics, input_path=Path(input_file), detail=schema_warning_detail)
 
     try:
         conversation = Conversation.model_validate(raw_obj)
@@ -999,7 +1001,12 @@ def main() -> None:
         output_stem = Path(source).stem
         destination_dir = Path(args.output_dir).expanduser() if args.output_dir else default_output_dir
         if destination_dir is not None:
-            conversation, _ = _load_conversation(source, verbose=False, schema_warning_detail="summary")
+            conversation, _ = _load_conversation(
+                source,
+                verbose=False,
+                schema_warning_detail="summary",
+                emit_schema_warnings=False,
+            )
             output_stem = canonical_conversation_stem(conversation)
         package_dir = Path(args.artifact_dir).expanduser() if args.artifact_dir else (destination_dir / output_stem if destination_dir else None)
         if package_dir is not None:
@@ -1043,7 +1050,12 @@ def main() -> None:
                     copy_result.metadata_total,
                 )
         if args.emit_tsv:
-            conversation, _ = _load_conversation(source, verbose=False, schema_warning_detail="summary")
+            conversation, _ = _load_conversation(
+                source,
+                verbose=False,
+                schema_warning_detail="summary",
+                emit_schema_warnings=False,
+            )
             root = destination_dir or (Path(args.output).expanduser().parent if args.output else Path.cwd())
             table_dir = (package_dir or (root / output_stem)) / "artifacts" / "derived"
             artifact_entries = load_artifact_entries(Path(source))
