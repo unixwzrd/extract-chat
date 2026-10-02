@@ -44,6 +44,7 @@ _KNOWN_TOP_LEVEL_KEYS = {
     "writingStyleCode",
     "temporaryChat",
     "owner",
+    "sectioned_conversation",
     "sugar_item_visible",
     "atlas_mode_enabled",
     "context_scopes",
@@ -96,6 +97,20 @@ def analyze_raw_conversation(raw_obj: Any) -> SchemaDiagnostics:
                 path=f"$.{key}",
                 message=f"Unknown top-level key '{key}' found; export will continue.",
                 fallback_used=False,
+            )
+        )
+
+    sectioned_conversation = raw_obj.get("sectioned_conversation")
+    if sectioned_conversation is not None:
+        diagnostics.warnings.append(
+            SchemaWarning(
+                code="unsupported_sectioned_conversation",
+                path="$.sectioned_conversation",
+                message=(
+                    "A non-null 'sectioned_conversation' value was found; export will continue using "
+                    "the canonical 'mapping' conversation tree."
+                ),
+                fallback_used=True,
             )
         )
 

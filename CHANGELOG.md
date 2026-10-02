@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-01 - 0.7.6 - ChatGPT Schema Compatibility
+
+### Schema handling
+
+- Accept ChatGPT's null `sectioned_conversation` placeholder without reporting schema drift.
+- Report a dedicated warning if `sectioned_conversation` later contains data, while continuing to export from the canonical conversation mapping.
+
+### Diagnostics
+
+- Avoid repeating schema warnings when ZIP processing performs an internal metadata load before the export.
+- Add regression coverage for null and non-null `sectioned_conversation` values and single-warning ZIP exports.
+
 ## 2026-09-18 - 0.7.5 - Chronology and Continuity Repairs
 
 ### Conversation ordering and rendering

@@ -162,6 +162,7 @@ class Conversation(BaseModel):
     is_do_not_remember: Optional[bool] = None
     memory_scope: Optional[str] = None
     sugar_item_id: Optional[str] = None
+    sectioned_conversation: Any = None
     
     class Config:
         extra = "allow"
@@ -897,4 +898,4 @@ class Conversation(BaseModel):
             'content': context_content,
             'block_type': "contextual",
             'metadata': metadata
-        } 
+        }
