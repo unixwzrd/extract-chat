@@ -229,11 +229,10 @@ def attach_local_artifacts(*, document: RenderDocument, input_path: Path, output
 
     def materialize(match: dict[str, Any]) -> tuple[Path, str]:
         artifact_path = Path(match["absolute_path"])
-        if output_path is not None and output_path.stem != input_path.stem and artifact_path.parent != output_parent:
-            category = match.get("origin") or "derived"
-            if category not in {"generated", "uploaded", "derived"}:
-                category = "derived"
-            destination = output_parent / output_path.stem / "artifacts" / category / artifact_path.name
+        if output_path is not None:
+            source_root = (input_path.parent / input_path.stem).resolve()
+            relative = artifact_path.relative_to(source_root)
+            destination = output_parent / output_path.stem / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             if artifact_path.resolve() != destination.resolve():
                 shutil.copy2(artifact_path, destination)
@@ -324,6 +323,20 @@ def copy_artifact_package(input_path: Path, destination: Path, *, force: bool) -
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
+        if relative == Path("artifact-manifest.json") and destination.name != input_path.stem:
+            manifest = json.loads(target.read_text(encoding="utf-8"))
+            changed = False
+            for artifact in manifest.get("artifacts", []):
+                old_path = artifact.get("relative_path")
+                if not isinstance(old_path, str):
+                    continue
+                old_relative = Path(old_path)
+                if old_relative.parts and old_relative.parts[0] == input_path.stem:
+                    artifact.setdefault("archive_relative_path", old_path)
+                    artifact["relative_path"] = str(Path(destination.name).joinpath(*old_relative.parts[1:]))
+                    changed = True
+            if changed:
+                target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         (artifact_copied if is_artifact else metadata_copied).append(target)
     return ArtifactCopyResult(
         artifact_copied=tuple(artifact_copied),
