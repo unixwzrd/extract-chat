@@ -111,7 +111,7 @@ pip install "git+https://github.com/unixwzrd/extract-chat.git"
 If you want a specific release:
 
 ```bash
-pip install "git+https://github.com/unixwzrd/extract-chat.git@v0.7.6"
+pip install "git+https://github.com/unixwzrd/extract-chat.git@v0.7.7"
 ```
 
 If you prefer to clone the repository first:
@@ -168,6 +168,8 @@ extract-chat conversation.zip \
 ```
 
 Pass either a standalone conversation JSON file or a LogGPT+ ZIP as the positional input. Without `--output-dir`, a ZIP creates a sibling directory matching the conversation stem packaged inside it so exports sort with their source archives even if the ZIP was renamed. Generated transcript, chunk, and artifact-package names use the UTC start and update dates, for example `2026-08-15-2026-09-09-this-is-the-title-of-the-chat`. Use `--output-dir` to choose a different destination. Downloaded artifacts are copied to `<destination>/<generated-stem>/artifacts/`, and Markdown/HTML links prefer those local files. Existing CSV, TSV, and spreadsheet files remain ordinary original artifacts. Small parseable CSV/TSV artifacts may also be displayed as tables while the original download link is retained. `--emit-tsv` only derives a TSV from an embedded table when no matching downloaded table artifact is present.
+
+Local artifact links remain beside the rendered output even when the input and output share a filename stem. ZIP extraction recovers older unflagged UTF-8 filenames only when confirmed by the artifact manifest. Files whose paths differ only by letter case receive distinct derived filenames such as `REPORT--2.xlsx`, preserving both on case-insensitive filesystems. Derived manifests follow renamed package and artifact paths, retaining the original path in `archive_relative_path`; source ZIPs and JSON files are not modified.
 
 Continuity chunks default to hybrid boundary selection with one turn of overlap. Every final Markdown part is measured after headers and overlap are added and may never exceed 524,288 UTF-8 bytes. Boundary strategy and overlap mode are independent; use `--chunk-strategy`, the byte/line/token limits, and at most one of the turn/line/byte overlap flags to select the behavior you need.
 

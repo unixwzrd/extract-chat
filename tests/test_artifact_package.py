@@ -185,3 +185,33 @@ def test_copy_artifact_package_refuses_different_existing_file(tmp_path: Path) -
     else:
         raise AssertionError("Expected a different existing artifact to be protected")
     assert target.read_bytes() == b"existing-image"
+
+
+def test_same_stem_output_materializes_artifact_outside_temporary_source(tmp_path: Path) -> None:
+    input_path = tmp_path / "temporary" / "chat.json"
+    source_file = input_path.parent / "chat/artifacts/generated/file-note.txt"
+    source_file.parent.mkdir(parents=True)
+    input_path.write_text("{}", encoding="utf-8")
+    source_file.write_text("preserved", encoding="utf-8")
+    document = RenderDocument(turns=[RenderTurn(role="assistant", turn_id="t", media_items=[MediaItem(kind="file_id", label="file-note")])])
+    output_path = tmp_path / "rendered/chat.md"
+    attach_local_artifacts(document=document, input_path=input_path, output_path=output_path)
+    assert document.turns[0].media_items[0].url == "chat/artifacts/generated/file-note.txt"
+    assert (output_path.parent / document.turns[0].media_items[0].url).read_text() == "preserved"
+
+
+def test_copy_package_updates_manifest_root_when_output_stem_changes(tmp_path: Path) -> None:
+    input_path = tmp_path / "source" / "chat.1.json"
+    source_file = input_path.parent / "chat.1/artifacts/generated/note.txt"
+    source_file.parent.mkdir(parents=True)
+    input_path.write_text("{}", encoding="utf-8")
+    source_file.write_text("note", encoding="utf-8")
+    manifest = {"artifacts": [{"relative_path": "chat.1/artifacts/generated/note.txt", "download_status": "downloaded"}]}
+    (source_file.parents[2] / "artifact-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    destination = tmp_path / "rendered/chat-1"
+    copy_artifact_package(input_path, destination, force=False)
+    copied = json.loads((destination / "artifact-manifest.json").read_text())
+    entry = copied["artifacts"][0]
+    assert entry["relative_path"] == "chat-1/artifacts/generated/note.txt"
+    assert (destination.parent / entry["relative_path"]).read_text() == "note"
+    assert entry["archive_relative_path"] == "chat.1/artifacts/generated/note.txt"

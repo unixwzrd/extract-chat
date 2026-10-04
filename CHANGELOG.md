@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-10-03 - 0.7.7 - Portable Archive and Artifact Repairs
+
+### ZIP extraction
+
+- Recover older ZIP member names containing UTF-8 bytes without the UTF-8 flag only when the intended path is confirmed by the artifact manifest.
+- Preserve files whose paths differ only by letter case by assigning distinct derived filenames, preventing overwrites on case-insensitive filesystems.
+- Reject duplicate extraction destinations while retaining traversal and symlink protections.
+
+### Artifact links and manifests
+
+- Copy linked artifacts beside rendered Markdown and HTML even when the input and output share a filename stem, preventing links into temporary ZIP extraction directories.
+- Preserve artifact directory structure when materializing local links.
+- Update derived artifact manifests when package or artifact paths change, retaining original paths in `archive_relative_path` without modifying source ZIPs or JSON.
+
+### Validation
+
+- Add regression coverage for unflagged UTF-8 filenames, case-distinct artifacts, duplicate destinations, same-stem local links, and renamed manifest package roots.
+- Update local media-link coverage to verify that rendered output references its materialized artifact copy.
+
 ## 2026-10-01 - 0.7.6 - ChatGPT Schema Compatibility
 
 ### Schema handling
