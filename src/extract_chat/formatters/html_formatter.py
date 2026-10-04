@@ -17,9 +17,13 @@ from extract_chat.processors.reference_processing.reference_utils import (
     build_reference_payload,
     format_apa_reference_entry,
     replace_inline_citation_markers,
-    strip_sources_and_references,
 )
-from extract_chat.schemas.render_models import MediaItem, RenderDocument, RenderTurn, ToolActivityItem
+from extract_chat.schemas.render_models import (
+    MediaItem,
+    RenderDocument,
+    RenderTurn,
+    ToolActivityItem,
+)
 
 
 class HTMLFormatter(BaseFormatter):
@@ -74,7 +78,9 @@ class HTMLFormatter(BaseFormatter):
             parts.append("</div></body></html>")
             return self._normalize_text("\n".join(parts))
         except Exception as exc:
-            raise FormattingError(f"Failed to format conversation: {exc}", self) from exc
+            raise FormattingError(
+                f"Failed to format conversation: {exc}", self
+            ) from exc
 
     def _coerce_document(self, conversation: Any) -> RenderDocument:
         if isinstance(conversation, RenderDocument):
@@ -89,13 +95,21 @@ class HTMLFormatter(BaseFormatter):
         metadata = document.get_metadata()
         lines = ['<div class="metadata">']
         if metadata.get("conversation_id"):
-            lines.append(f"<p><strong>Conversation ID:</strong> {escape(metadata['conversation_id'])}</p>")
+            lines.append(
+                f"<p><strong>Conversation ID:</strong> {escape(metadata['conversation_id'])}</p>"
+            )
         if metadata.get("create_time"):
-            lines.append(f"<p><strong>Created:</strong> {escape(self._format_timestamp(metadata['create_time']))}</p>")
+            lines.append(
+                f"<p><strong>Created:</strong> {escape(self._format_timestamp(metadata['create_time']))}</p>"
+            )
         if metadata.get("update_time"):
-            lines.append(f"<p><strong>Last Update:</strong> {escape(self._format_timestamp(metadata['update_time']))}</p>")
+            lines.append(
+                f"<p><strong>Last Update:</strong> {escape(self._format_timestamp(metadata['update_time']))}</p>"
+            )
         if metadata.get("default_model_slug"):
-            lines.append(f"<p><strong>Default Model:</strong> {escape(metadata['default_model_slug'])}</p>")
+            lines.append(
+                f"<p><strong>Default Model:</strong> {escape(metadata['default_model_slug'])}</p>"
+            )
         lines.append("</div>")
         return lines
 
@@ -114,9 +128,10 @@ class HTMLFormatter(BaseFormatter):
             refs = turn.references_table.get("references", [])
             if refs:
                 content = replace_inline_citation_markers(content, refs)
-        content, _sources = strip_sources_and_references(content)
         if content.strip():
-            parts.append(f'<div class="content">{self._convert_markdown_to_html(content)}</div>')
+            parts.append(
+                f'<div class="content">{self._convert_markdown_to_html(content)}</div>'
+            )
 
         if turn.media_items:
             parts.append(self._render_media(turn.media_items))
@@ -130,7 +145,7 @@ class HTMLFormatter(BaseFormatter):
         return "\n".join(parts)
 
     def _render_tools_used(self, tools: list[ToolActivityItem]) -> str:
-        parts = ["<details class=\"tools-used\">", "<summary>Tools Used</summary>"]
+        parts = ['<details class="tools-used">', "<summary>Tools Used</summary>"]
         for item in tools:
             parts.append('<div class="tool-item">')
             parts.append(f"<strong>{escape(item.title)}</strong>")
@@ -157,7 +172,9 @@ class HTMLFormatter(BaseFormatter):
             if search_queries:
                 parts.append("<p><strong>Search Queries</strong></p><ul>")
                 for query in search_queries:
-                    query_text = query.get("q") if isinstance(query, dict) else str(query)
+                    query_text = (
+                        query.get("q") if isinstance(query, dict) else str(query)
+                    )
                     if query_text:
                         parts.append(f"<li>{escape(query_text)}</li>")
                 parts.append("</ul>")
@@ -166,7 +183,11 @@ class HTMLFormatter(BaseFormatter):
         return "\n".join(parts)
 
     def _render_media(self, media_items: list[MediaItem]) -> str:
-        parts = ['<details class="media-items">', "<summary>Media</summary>", '<div class="artifact-list">']
+        parts = [
+            '<details class="media-items">',
+            "<summary>Media</summary>",
+            '<div class="artifact-list">',
+        ]
         for item in media_items:
             label = escape(item.label)
             kind = escape(item.kind)
@@ -181,19 +202,40 @@ class HTMLFormatter(BaseFormatter):
                 body = f'<p><strong>{kind}</strong>: <a href="{href}" download>{label}</a></p>'
                 if isinstance(table_rows, list) and table_rows:
                     body += self._render_artifact_table(table_rows)
-                elif mime_type.startswith("image/") or suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".svg"}:
+                elif mime_type.startswith("image/") or suffix in {
+                    ".png",
+                    ".jpg",
+                    ".jpeg",
+                    ".gif",
+                    ".webp",
+                    ".avif",
+                    ".svg",
+                }:
                     body += f'<figure><img src="{href}" alt="{label}" loading="lazy" style="max-width:100%;height:auto"></figure>'
-                elif mime_type.startswith("audio/") or suffix in {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}:
+                elif mime_type.startswith("audio/") or suffix in {
+                    ".mp3",
+                    ".wav",
+                    ".m4a",
+                    ".aac",
+                    ".flac",
+                    ".ogg",
+                }:
                     body += f'<audio controls preload="metadata" src="{href}"></audio>'
-                elif mime_type.startswith("video/") or suffix in {".mp4", ".mov", ".webm"}:
+                elif mime_type.startswith("video/") or suffix in {
+                    ".mp4",
+                    ".mov",
+                    ".webm",
+                }:
                     body += f'<video controls preload="metadata" src="{href}" style="max-width:100%"></video>'
                 if canonical_id:
-                    body += f'<p>File ID: <code>{escape(str(canonical_id))}</code></p>'
+                    body += f"<p>File ID: <code>{escape(str(canonical_id))}</code></p>"
                 if original_url:
                     body += f'<p><span class="muted">Remote:</span> <code>{escape(str(original_url))}</code></p>'
                 parts.append(f'<section class="artifact">{body}</section>')
             elif item.url:
-                parts.append(f'<p><strong>{kind}</strong>: <a href="{escape(item.url)}">{label}</a></p>')
+                parts.append(
+                    f'<p><strong>{kind}</strong>: <a href="{escape(item.url)}">{label}</a></p>'
+                )
             else:
                 parts.append(f"<p><strong>{kind}</strong>: <code>{label}</code></p>")
         parts.extend(["</div>", "</details>"])
@@ -206,7 +248,9 @@ class HTMLFormatter(BaseFormatter):
         padded = [list(row) + [""] * (width - len(row)) for row in rows]
         head = "".join(f"<th>{escape(str(value))}</th>" for value in padded[0])
         body = "".join(
-            "<tr>" + "".join(f"<td>{escape(str(value))}</td>" for value in row) + "</tr>"
+            "<tr>"
+            + "".join(f"<td>{escape(str(value))}</td>" for value in row)
+            + "</tr>"
             for row in padded[1:]
         )
         return f'<div class="table-wrapper"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
@@ -217,7 +261,11 @@ class HTMLFormatter(BaseFormatter):
                 {
                     "type": "assistant",
                     "references_table": turn.references_table or {},
-                    "metadata": {"reference_turn_number": turn.metadata.get("reference_turn_number")},
+                    "metadata": {
+                        "reference_turn_number": turn.metadata.get(
+                            "reference_turn_number"
+                        )
+                    },
                 }
             ]
         )
@@ -225,7 +273,11 @@ class HTMLFormatter(BaseFormatter):
         if not groups:
             return ""
 
-        parts = ['<details class="references">', "<summary>References</summary>", "<ol>"]
+        parts = [
+            '<details class="references">',
+            "<summary>References</summary>",
+            "<ol>",
+        ]
         for index, group in enumerate(groups, start=1):
             meta = group.get("meta") or {}
             occurrences = group.get("occurrences") or []
@@ -237,7 +289,11 @@ class HTMLFormatter(BaseFormatter):
             seq = meta.get("seq") or index
             citation = format_apa_reference_entry(meta, html=True)
             text = (meta.get("text") or "").strip().replace("\n", " ")
-            snippets = f' <span class="excerpt">"{escape(text)}"</span>' if text and not meta.get("is_fallback") else ""
+            snippets = (
+                f' <span class="excerpt">"{escape(text)}"</span>'
+                if text and not meta.get("is_fallback")
+                else ""
+            )
             backlinks = [
                 f'<a class="backref" href="#ref-source-{occ.get("unique_id")}">{escape(occ.get("backlink_label"))}^</a>'
                 for occ in occurrences
@@ -258,7 +314,11 @@ class HTMLFormatter(BaseFormatter):
         groups = payload.get("groups", [])
         if not groups:
             return "", []
-        parts = ['<div class="block system-block">', '<div class="block-header">References</div>', "<ol>"]
+        parts = [
+            '<div class="block system-block">',
+            '<div class="block-header">References</div>',
+            "<ol>",
+        ]
         for index, group in enumerate(groups, start=1):
             meta = group.get("meta") or {}
             occurrences = group.get("occurrences") or []
@@ -289,7 +349,9 @@ class HTMLFormatter(BaseFormatter):
             return ""
         if _markdown_lib:
             try:
-                return _markdown_lib.markdown(text, extensions=["tables", "fenced_code"])
+                return _markdown_lib.markdown(
+                    text, extensions=["tables", "fenced_code"]
+                )
             except Exception:
                 pass
         paragraphs = []
