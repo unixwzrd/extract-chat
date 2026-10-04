@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-10-03 - 0.7.8 - Transcript Fidelity and Timestamp Repairs
+
+### Legacy export naming
+
+- Accept mixed Unix-second and millisecond timestamps when generating dated conversation names and choosing the latest message date.
+- Fall back to an unknown date for timestamps outside the supported calendar range instead of aborting the export.
+
+### Transcript fidelity
+
+- Preserve authored `Sources` blocks and `References` headings in Markdown and HTML, including headings inside pasted documents or code, instead of truncating the remainder of a message.
+
+### Validation
+
+- Add regression coverage for mixed timestamp units, invalid calendar dates, and preservation of authored source and reference sections in both transcript formats.
+
 ## 2026-10-03 - 0.7.7 - Portable Archive and Artifact Repairs
 
 ### ZIP extraction

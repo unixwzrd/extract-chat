@@ -13,7 +13,24 @@ from extract_chat.processors.reference_processing.reference_utils import (
     replace_inline_citation_markers,
 )
 from extract_chat.schemas.conversation import Conversation
+from extract_chat.schemas.render_models import RenderDocument, RenderTurn
 from tests.sample_data import SAMPLE_PATH, TURN_ID
+
+
+def test_transcript_formatters_preserve_authored_reference_sections() -> None:
+    content = "Opening text.\n\n**Sources:**\nAn authored source.\n\n```markdown\n## References\nA heading inside pasted code.\n```\n\n## References\nKeep this ending."
+    document = RenderDocument(
+        turns=[
+            RenderTurn(role=role, turn_id=role, content=content)
+            for role in ("user", "assistant")
+        ]
+    )
+    markdown = MarkdownFormatter({}).format_conversation(document)
+    html = HTMLFormatter({}).format_conversation(document)
+    assert markdown.count(content) == 2
+    assert html.count("An authored source.") == 2
+    assert html.count("A heading inside pasted code.") == 2
+    assert html.count("Keep this ending.") == 2
 
 
 def _load_conversation() -> Conversation:
@@ -42,7 +59,9 @@ def _markdown_reference_numbers(markdown_output: str) -> list[int]:
 
 
 def _html_reference_numbers(html_output: str) -> list[int]:
-    return [int(match) for match in re.findall(r"<strong>Ref (\d+)\.</strong>", html_output)]
+    return [
+        int(match) for match in re.findall(r"<strong>Ref (\d+)\.</strong>", html_output)
+    ]
 
 
 def test_extract_reference_groups_deduplicates_source_label_variants() -> None:
@@ -93,7 +112,9 @@ def test_extract_reference_groups_deduplicates_source_label_variants() -> None:
     assert occurrence_ref_ids == {14, 16}
     # ensure canonical URL without fragment used
     meta_url = group["meta"].get("url")
-    assert isinstance(meta_url, str) and meta_url.startswith("https://example.com/resource")
+    assert isinstance(meta_url, str) and meta_url.startswith(
+        "https://example.com/resource"
+    )
 
 
 def test_reference_groups_keep_distinct_line_ranges() -> None:
@@ -255,8 +276,10 @@ def test_markdown_and_html_references_are_consistent() -> None:
     )
 
     html_formatter = HTMLFormatter()
-    html_refs_section, html_groups = html_formatter._generate_global_references_section_html(  # type: ignore[attr-defined]
-        [conversation_block]
+    html_refs_section, html_groups = (
+        html_formatter._generate_global_references_section_html(  # type: ignore[attr-defined]
+            [conversation_block]
+        )
     )
 
     assert "## References" in markdown_refs_section

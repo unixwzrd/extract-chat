@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 import unicodedata
 from datetime import datetime, timezone
@@ -10,14 +11,25 @@ from typing import Any
 _SLUG_RE = re.compile(r"[^\w]+", re.UNICODE)
 
 
-def _timestamp_date(value: Any) -> str | None:
+def _timestamp_seconds(value: Any) -> float | None:
     try:
         timestamp = float(value)
     except (TypeError, ValueError):
         return None
-    if timestamp <= 0:
+    if not math.isfinite(timestamp) or timestamp <= 0:
         return None
-    return datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d")
+    # Older exports can mix Unix seconds and milliseconds in the same JSON.
+    return timestamp / 1000 if timestamp > 2e10 else timestamp
+
+
+def _timestamp_date(value: Any) -> str | None:
+    timestamp = _timestamp_seconds(value)
+    if timestamp is None:
+        return None
+    try:
+        return datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d")
+    except (ValueError, OverflowError, OSError):
+        return None
 
 
 def _latest_message_timestamp(conversation: Any) -> float | None:
@@ -26,9 +38,8 @@ def _latest_message_timestamp(conversation: Any) -> float | None:
     for turn in mapping.values():
         message = getattr(turn, "message", None)
         value = getattr(message, "create_time", None) if message is not None else None
-        try:
-            timestamp = float(value)
-        except (TypeError, ValueError):
+        timestamp = _timestamp_seconds(value)
+        if timestamp is None:
             continue
         latest = timestamp if latest is None else max(latest, timestamp)
     return latest

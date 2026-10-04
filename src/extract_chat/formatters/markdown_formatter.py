@@ -11,9 +11,13 @@ from extract_chat.processors.reference_processing.reference_utils import (
     build_reference_payload,
     format_apa_reference_entry,
     replace_inline_citation_markers,
-    strip_sources_and_references,
 )
-from extract_chat.schemas.render_models import MediaItem, RenderDocument, RenderTurn, ToolActivityItem
+from extract_chat.schemas.render_models import (
+    MediaItem,
+    RenderDocument,
+    RenderTurn,
+    ToolActivityItem,
+)
 
 
 class MarkdownFormatter(BaseFormatter):
@@ -44,9 +48,13 @@ class MarkdownFormatter(BaseFormatter):
                 lines.append("")
 
             if metadata.get("create_time"):
-                lines.append(f"**Created:** {self._format_timestamp(metadata['create_time'])}")
+                lines.append(
+                    f"**Created:** {self._format_timestamp(metadata['create_time'])}"
+                )
             if metadata.get("update_time"):
-                lines.append(f"**Last Update:** {self._format_timestamp(metadata['update_time'])}")
+                lines.append(
+                    f"**Last Update:** {self._format_timestamp(metadata['update_time'])}"
+                )
             if metadata.get("create_time") or metadata.get("update_time"):
                 lines.append("")
             if metadata.get("default_model_slug"):
@@ -75,18 +83,24 @@ class MarkdownFormatter(BaseFormatter):
 
             return self._normalize_text("\n".join(lines).rstrip() + "\n")
         except Exception as exc:
-            raise FormattingError(f"Failed to format conversation: {exc}", self) from exc
+            raise FormattingError(
+                f"Failed to format conversation: {exc}", self
+            ) from exc
 
     def _coerce_document(self, conversation: Any) -> RenderDocument:
         if isinstance(conversation, RenderDocument):
             return conversation
         if isinstance(conversation, dict) and "content_blocks" in conversation:
-            return self._legacy_document_from_blocks(conversation.get("content_blocks") or [])
+            return self._legacy_document_from_blocks(
+                conversation.get("content_blocks") or []
+            )
         if hasattr(conversation, "model_dump"):
             return RenderDocument.model_validate(conversation.model_dump())
         return RenderDocument.model_validate(conversation)
 
-    def _legacy_document_from_blocks(self, blocks: list[dict[str, Any]]) -> RenderDocument:
+    def _legacy_document_from_blocks(
+        self, blocks: list[dict[str, Any]]
+    ) -> RenderDocument:
         document = RenderDocument()
         for block in blocks:
             block_type = block.get("type")
@@ -118,7 +132,9 @@ class MarkdownFormatter(BaseFormatter):
                                 metadata={
                                     **metadata,
                                     "search_queries": content.get("search_queries", []),
-                                    "search_result_groups": content.get("search_result_groups", []),
+                                    "search_result_groups": content.get(
+                                        "search_result_groups", []
+                                    ),
                                 },
                             )
                         ],
@@ -152,7 +168,6 @@ class MarkdownFormatter(BaseFormatter):
             refs = turn.references_table.get("references", [])
             if refs:
                 content = replace_inline_citation_markers(content, refs)
-        content, _sources = strip_sources_and_references(content)
         if content.strip():
             lines.append(content.strip())
             lines.append("")
@@ -202,7 +217,9 @@ class MarkdownFormatter(BaseFormatter):
                 lines.append("")
                 lines.append("Search Queries:")
                 for query in search_queries:
-                    query_text = query.get("q") if isinstance(query, dict) else str(query)
+                    query_text = (
+                        query.get("q") if isinstance(query, dict) else str(query)
+                    )
                     if query_text:
                         lines.append(f"- {query_text}")
             lines.append("")
@@ -223,14 +240,37 @@ class MarkdownFormatter(BaseFormatter):
                 if isinstance(table_rows, list) and table_rows:
                     lines.extend(self._render_artifact_table(table_rows))
                     lines.append(f"- Download original: [{item.label}]({item.url})")
-                elif mime_type.startswith("image/") or suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".svg"}:
+                elif mime_type.startswith("image/") or suffix in {
+                    ".png",
+                    ".jpg",
+                    ".jpeg",
+                    ".gif",
+                    ".webp",
+                    ".avif",
+                    ".svg",
+                }:
                     lines.append(f"![{item.label}]({item.url})")
                     lines.append(f"- Download image: [{item.label}]({item.url})")
-                elif mime_type.startswith("audio/") or suffix in {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}:
-                    lines.append(f'<audio controls src="{escape(item.url, quote=True)}">[{item.label}]({item.url})</audio>')
+                elif mime_type.startswith("audio/") or suffix in {
+                    ".mp3",
+                    ".wav",
+                    ".m4a",
+                    ".aac",
+                    ".flac",
+                    ".ogg",
+                }:
+                    lines.append(
+                        f'<audio controls src="{escape(item.url, quote=True)}">[{item.label}]({item.url})</audio>'
+                    )
                     lines.append(f"- Download audio: [{item.label}]({item.url})")
-                elif mime_type.startswith("video/") or suffix in {".mp4", ".mov", ".webm"}:
-                    lines.append(f'<video controls src="{escape(item.url, quote=True)}">[{item.label}]({item.url})</video>')
+                elif mime_type.startswith("video/") or suffix in {
+                    ".mp4",
+                    ".mov",
+                    ".webm",
+                }:
+                    lines.append(
+                        f'<video controls src="{escape(item.url, quote=True)}">[{item.label}]({item.url})</video>'
+                    )
                     lines.append(f"- Download video: [{item.label}]({item.url})")
                 else:
                     lines.append(f"- Local: [{item.label}]({item.url})")
@@ -255,7 +295,9 @@ class MarkdownFormatter(BaseFormatter):
 
         lines = ["| " + " | ".join(cell(value) for value in padded[0]) + " |"]
         lines.append("| " + " | ".join("---" for _ in range(width)) + " |")
-        lines.extend("| " + " | ".join(cell(value) for value in row) + " |" for row in padded[1:])
+        lines.extend(
+            "| " + " | ".join(cell(value) for value in row) + " |" for row in padded[1:]
+        )
         return lines
 
     def _render_reference_details(self, turn: RenderTurn) -> str:
@@ -264,7 +306,11 @@ class MarkdownFormatter(BaseFormatter):
                 {
                     "type": "assistant",
                     "references_table": turn.references_table or {},
-                    "metadata": {"reference_turn_number": turn.metadata.get("reference_turn_number")},
+                    "metadata": {
+                        "reference_turn_number": turn.metadata.get(
+                            "reference_turn_number"
+                        )
+                    },
                 }
             ]
         )
@@ -304,7 +350,9 @@ class MarkdownFormatter(BaseFormatter):
         lines.append("</details>")
         return "\n".join(lines).strip()
 
-    def _generate_global_references_section(self, conversation_blocks: list[dict[str, Any]]) -> str:
+    def _generate_global_references_section(
+        self, conversation_blocks: list[dict[str, Any]]
+    ) -> str:
         payload = build_reference_payload(conversation_blocks)
         groups = payload.get("groups", [])
         if not groups:
