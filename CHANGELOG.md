@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### 2026-10-27 - Context move instructions
+
+- Remove the user-facing upload preamble from generated `context-move-instructions.md` files so the text begins directly with instructions for reconstructing the conversation context.
+
 ## 2026-10-03 - 0.7.8 - Transcript Fidelity and Timestamp Repairs
 
 ### Legacy export naming

@@ -253,8 +253,6 @@ def _context_move_instructions(
 
     return (
         "# Context Move Instructions\n\n"
-        "Paste these instructions into the new conversation before uploading the numbered chunk files. "
-        "The index, manifest, and this instruction file are bundle metadata and are not conversation chunks.\n\n"
         "We are continuing a previous conversation whose transcript exceeded the available context. "
         "Read the numbered Markdown chunks and internally reconstruct the working context. Do not summarize the transcript back to me unless I request a summary.\n\n"
         "## Bundle details\n\n"
