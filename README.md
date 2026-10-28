@@ -2,7 +2,7 @@
 
 ![extract-chat](docs/images/extract-chat-banner.png)
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Pydantic](https://img.shields.io/badge/Pydantic-2.0%2B-red)](#) [![UnicodeFix](https://img.shields.io/badge/UnicodeFix-Integrated-orange)](#)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Pydantic](https://img.shields.io/badge/Pydantic-2.0%2B-red)](#) [![UnicodeFix](https://img.shields.io/badge/UnicodeFix-Integrated-orange)](#)
 
 - [extract-chat](#extract-chat)
   - [Works with LogGPT](#works-with-loggpt)
@@ -100,7 +100,7 @@ Think of it as:
 
 ## Installation
 
-Requires Python 3.10+.
+Requires Python 3.11+. UnicodeFix is pinned to a tested Git revision so upstream changes do not silently change the installed dependency.
 
 If you just want to use the tool, the easiest option is to install it directly from GitHub:
 

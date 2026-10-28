@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### 2026-10-27 - Dependency compatibility
+
+- Raise the minimum Python version to 3.11 to match UnicodeFix's requirements and align the CI matrix and installation documentation.
+- Pin UnicodeFix to the tested revision `9e1cca9f9bb20139c258fe17c68ae7ee33391337` in both dependency declarations instead of following its moving default branch.
+
 ### 2026-10-27 - Context move instructions
 
 - Remove the user-facing upload preamble from generated `context-move-instructions.md` files so the text begins directly with instructions for reconstructing the conversation context.

@@ -7,14 +7,14 @@ name = "extract-chat"
 version = "0.7.8"
 description = "Convert ChatGPT conversation JSON and LogGPT+ ZIP archives into readable Markdown or HTML logs with local artifacts."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [{ name = "unixwzrd" }]
 dependencies = [
   "pydantic>=2",
   "ftfy>=6.2",
   "markdown>=3.6",
-  "unicodefix @ git+https://github.com/unixwzrd/UnicodeFix.git",
+  "unicodefix @ git+https://github.com/unixwzrd/UnicodeFix.git@9e1cca9f9bb20139c258fe17c68ae7ee33391337",
 ]
 
 [project.optional-dependencies]
