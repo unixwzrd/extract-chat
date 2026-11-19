@@ -4,6 +4,8 @@ import zipfile
 from pathlib import Path
 from subprocess import CompletedProcess
 
+import pytest
+
 from extract_chat import cli
 from extract_chat.processors.schema_diagnostics import analyze_raw_conversation
 from extract_chat.schemas.render_models import SchemaDiagnostics, SchemaWarning
@@ -17,6 +19,71 @@ def run_cli(arguments: list[str]) -> None:
         cli.main()
     finally:
         sys.argv = original
+
+
+def test_launcher_resolves_path_options_without_changing_globs(tmp_path: Path) -> None:
+    args = cli.build_parser().parse_args(["--output-dir", "results with spaces", "--css-file", "~/theme.css", "--artifact-dir", "files", "--log-file", "run.log", "--", "inputs/**/*.json", "-café.json"])
+    cli._apply_launcher_directory(args, str(tmp_path))
+    assert args.input_file == [str(tmp_path / "inputs/**/*.json"), str(tmp_path / "-café.json")]
+    assert args.output_dir == str(tmp_path / "results with spaces")
+    assert args.artifact_dir == str(tmp_path / "files")
+    assert args.log_file == str(tmp_path / "run.log")
+    assert Path(args.css_file).is_absolute()
+    with pytest.raises(ValueError, match="must be absolute"):
+        cli._apply_launcher_directory(args, "relative")
+
+
+@pytest.mark.parametrize("explicit_output", [False, True])
+def test_launcher_preserves_caller_output_and_chunk_paths(tmp_path: Path, monkeypatch, explicit_output: bool) -> None:
+    caller = tmp_path / "caller"
+    container = tmp_path / "sandbox-container"
+    caller.mkdir()
+    container.mkdir()
+    original = SAMPLE_PATH.read_bytes()
+    source = caller / "conversation.json"
+    source.write_bytes(original)
+    monkeypatch.chdir(container)
+    monkeypatch.setenv("EXTRACT_CHAT_CALLER_DIRECTORY", str(caller))
+    args = ["extract-chat", "conversation.json", "--format", "markdown" if explicit_output else "both", "--chunk"]
+    if explicit_output:
+        args += ["--output", "results/transcript.md"]
+    run_cli(args)
+    root = caller / "results" if explicit_output else caller
+    stem = "transcript" if explicit_output else "conversation"
+    if explicit_output:
+        assert (root / f"{stem}.md").is_file()
+    else:
+        assert (root / f"{stem}.md").is_file()
+        assert (root / f"{stem}.html").is_file()
+    assert (root / f"{stem}-chunks/chunk-manifest.json").is_file()
+    assert source.read_bytes() == original
+    assert not list(container.iterdir())
+
+
+def test_launcher_jekyll_default_output_uses_caller(tmp_path: Path, monkeypatch) -> None:
+    container = tmp_path / "container"
+    caller = tmp_path / "caller"
+    container.mkdir()
+    caller.mkdir()
+    (caller / "conversation.json").write_bytes(SAMPLE_PATH.read_bytes())
+    monkeypatch.chdir(container)
+    monkeypatch.setenv("EXTRACT_CHAT_CALLER_DIRECTORY", str(caller))
+    run_cli(["extract-chat", "conversation.json", "--format", "jekyll", "--jekyll-turn-id", TURN_ID, "--jekyll-base-slug", "launcher-jekyll"])
+    assert list((caller / "launcher-jekyll").glob("*.md"))
+    assert not list(container.iterdir())
+
+
+def test_launcher_batch_default_root_uses_caller(tmp_path: Path, monkeypatch) -> None:
+    caller, container = tmp_path / "caller", tmp_path / "container"
+    inputs = caller / "inputs"
+    inputs.mkdir(parents=True)
+    container.mkdir()
+    (inputs / "conversation.json").write_bytes(SAMPLE_PATH.read_bytes())
+    monkeypatch.chdir(container)
+    monkeypatch.setenv("EXTRACT_CHAT_CALLER_DIRECTORY", str(caller))
+    run_cli(["extract-chat", "--batch-dir", "inputs"])
+    assert list((caller / "tmp").glob("batch-validate-*/reports/summary.md"))
+    assert not list(container.iterdir())
 
 
 def test_chunk_help_separates_strategy_from_overlap_modes() -> None:
@@ -361,7 +428,7 @@ def test_cli_writes_media_inventory_when_requested(tmp_path: Path) -> None:
     assert inventory["media_count"] >= 1
     assert any(item["media"].get("asset_pointer") == "file-service://asset-123" for item in inventory["items"])
     rendered = output_path.read_text(encoding="utf-8")
-    assert "<summary>Media</summary>" in rendered
+    assert "<summary>Artifacts</summary>" in rendered
     assert "https://example.com/image.png" in rendered
 
 
@@ -440,7 +507,8 @@ def test_cli_prefers_local_media_bundle_links_when_present(tmp_path: Path) -> No
     assert "- Remote: `https://chatgpt.com/backend-api/estuary/content?id=file_abc123&sig=xyz`" in rendered
 
 
-def test_cli_reads_plus_zip_and_reports_complete_artifact_package(tmp_path: Path, caplog) -> None:
+@pytest.mark.parametrize("extension", ["zip", "lgpt", "LGPT"])
+def test_cli_reads_plus_zip_and_reports_complete_artifact_package(tmp_path: Path, caplog, extension: str) -> None:
     payload = {
         "title": "Plus Archive",
         "create_time": 1_700_000_000,
@@ -457,7 +525,7 @@ def test_cli_reads_plus_zip_and_reports_complete_artifact_package(tmp_path: Path
             },
         },
     }
-    archive_path = tmp_path / "plus.zip"
+    archive_path = tmp_path / f"plus.{extension}"
     manifest = {"artifacts": [{
         "canonical_id": "file_test", "relative_path": "plus/artifacts/uploaded/upload.png",
         "original_filename": "upload.png", "origin": "uploaded", "download_status": "downloaded",

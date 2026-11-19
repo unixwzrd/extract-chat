@@ -7,6 +7,9 @@ import logging
 from typing import Any
 
 from extract_chat.context.document_context import DocumentContext
+from extract_chat.progress import report
+from extract_chat.processors.conversation_grouping import group_assistant_updates
+from extract_chat.processors.native_activity import attach_native_activity, context_citations, image_generation_info, native_activity_metadata, pair_native_tools, reasoning_text
 from extract_chat.processors.reference_processing.citation_processor import CitationProcessor
 from extract_chat.schemas.render_models import (
     MediaItem,
@@ -26,6 +29,7 @@ _INTERNAL_CONTENT_TYPES = {
     "code",
     "execution_output",
     "tool_result",
+    "tool_call",
     "tool_output",
     "system_error",
     "tether_quote",
@@ -56,11 +60,10 @@ class TurnProcessorV2:
             default_model_slug=getattr(conversation, "default_model_slug", None),
         )
 
-        pending_tools: list[ToolActivityItem] = []
-        pending_media: list[MediaItem] = []
-        last_assistant_turn: RenderTurn | None = None
+        activities: list[tuple[ToolActivityItem, list[MediaItem]]] = []
 
-        for turn_id, turn_data, _level in ordered_turns:
+        for index, (turn_id, turn_data, _level) in enumerate(ordered_turns):
+            report("processing", completed=index, total=len(ordered_turns))
             message = getattr(turn_data, "message", None)
             if not message:
                 continue
@@ -74,20 +77,12 @@ class TurnProcessorV2:
                 continue
 
             if classification == "internal":
-                pending_tools.append(self._build_tool_activity(message, turn_id))
-                pending_media.extend(self._extract_media_items(message, turn_id))
+                activities.append((self._build_tool_activity(message, turn_id), self._extract_media_items(message, turn_id)))
                 continue
 
             if classification == "assistant":
                 turn = self._build_visible_turn(message, turn_id, role="assistant", source_turn=turn_data)
-                if pending_tools:
-                    turn.tools_used.extend(sorted(pending_tools, key=self._tool_sort_key))
-                    pending_tools = []
-                if pending_media:
-                    turn.media_items.extend(self._deduplicate_media(pending_media))
-                    pending_media = []
                 document.turns.append(turn)
-                last_assistant_turn = turn
                 continue
 
             if classification == "user":
@@ -100,11 +95,12 @@ class TurnProcessorV2:
                     document.turns.append(turn)
                 continue
 
-        if pending_tools and last_assistant_turn is not None:
-            last_assistant_turn.tools_used.extend(sorted(pending_tools, key=self._tool_sort_key))
-        if pending_media and last_assistant_turn is not None:
-            last_assistant_turn.media_items.extend(self._deduplicate_media(pending_media))
-
+        document.turns = attach_native_activity(document.turns, activities, dc)
+        document.turns = group_assistant_updates(document.turns, dc)
+        pair_native_tools([item for turn in document.turns for item in turn.tools_used], dc)
+        for turn in document.turns:
+            turn.tools_used.sort(key=self._tool_sort_key)
+            turn.media_items = self._deduplicate_media(turn.media_items)
         return document
 
     def _classify_message(self, message: Any) -> str:
@@ -114,11 +110,16 @@ class TurnProcessorV2:
         content_type = getattr(content, "content_type", None)
         text = self._extract_text_content(content).strip()
 
-        if metadata.get("is_user_system_message"):
+        if metadata.get("is_user_system_message") or content_type in {"user_editable_context", "model_editable_context"} or metadata.get("user_context_message_data"):
             return "conversation_context"
 
         if role == "tool":
             return "internal"
+
+        # Final text is user-facing even when its author metadata records a
+        # contributing tool (notably real_author=tool:web on search answers).
+        if role == "assistant" and getattr(message, "channel", None) == "final" and content_type in {"text", "multimodal_text"} and getattr(message, "recipient", None) in {None, "", "all"} and not metadata.get("is_visually_hidden_from_conversation"):
+            return "assistant"
 
         if self._is_internal(message):
             return "internal"
@@ -138,6 +139,8 @@ class TurnProcessorV2:
         role = getattr(getattr(message, "author", None), "role", "unknown")
 
         if content_type in _INTERNAL_CONTENT_TYPES:
+            return True
+        if role == "assistant" and (getattr(message, "channel", None) == "analysis" or metadata.get("is_visually_hidden_from_conversation")):
             return True
 
         author_meta = getattr(getattr(message, "author", None), "metadata", {}) or {}
@@ -160,7 +163,7 @@ class TurnProcessorV2:
                 return True
 
         recipient = str(getattr(message, "recipient", "") or metadata.get("recipient") or "")
-        if recipient and recipient != "all" and "tool" in recipient.lower():
+        if role == "assistant" and recipient and recipient != "all":
             return True
 
         if metadata.get("end_turn") is False and role != "user":
@@ -174,9 +177,14 @@ class TurnProcessorV2:
         timestamp = getattr(message, "create_time", None)
         entries: list[SystemContextEntry] = []
 
+        export_context = metadata.get("export_context")
+        if isinstance(export_context, dict) and isinstance(export_context.get("text"), str):
+            entries.append(SystemContextEntry(title=str(export_context.get("title") or "Export information"), content=export_context["text"], turn_id=turn_id, timestamp=timestamp))
+
         for title, value in (
             ("User Profile", getattr(content, "user_profile", None)),
             ("User Instructions", getattr(content, "user_instructions", None)),
+            ("Model Context", getattr(content, "model_set_context", None)),
         ):
             text = str(value or "").strip()
             if text:
@@ -210,9 +218,14 @@ class TurnProcessorV2:
             metadata={
                 "message_id": getattr(message, "id", None),
                 "author": role,
-                "model_slug": metadata.get("model_slug"),
+                "author_name": getattr(getattr(message, "author", None), "name", None),
+                "status": getattr(message, "status", None),
+                "model_slug": metadata.get("model_slug") or getattr(message, "model_slug", None),
                 "recipient": getattr(message, "recipient", None),
                 "request_id": metadata.get("request_id"),
+                "channel": getattr(message, "channel", None),
+                "exchange_id": metadata.get("turn_exchange_id") or metadata.get("working_turn_id"),
+                "context_citations": context_citations(metadata),
             },
             media_items=self._extract_media_items(message, turn_id),
         )
@@ -245,7 +258,10 @@ class TurnProcessorV2:
 
         category = "internal"
         title = "Internal Activity"
-        if role == "tool":
+        if content_type == "tool_call":
+            category = "tool_call"
+            title = f"Tool Call: {getattr(message, 'recipient', None) or 'Unknown tool'}"
+        elif role == "tool":
             category = "tool_output"
             title = self._tool_title(message, content_type)
         elif content_type in {"thoughts", "reasoning_recap", "model_editable_context", "user_editable_context"}:
@@ -254,6 +270,18 @@ class TurnProcessorV2:
         elif role == "assistant":
             category = "hidden_assistant"
             title = "Hidden Assistant Activity"
+
+        native = metadata.get("source") != "hermes"
+        recipient = getattr(message, "recipient", None)
+        if native and role == "assistant" and recipient not in {None, "", "all"}:
+            category, title = "tool_call", f"Tool call: {recipient}"
+        elif native and (content_type in {"thoughts", "reasoning_recap"} or getattr(message, "channel", None) == "analysis"):
+            category = "reasoning"
+            title = "Reasoning summary" if content_type == "reasoning_recap" else "Reasoning"
+            if content_type in {"thoughts", "reasoning_recap"}:
+                text = reasoning_text(content.model_dump(exclude_none=True))
+        if native and not text:
+            text = next((value for key in ("content", "result", "summary") if isinstance(value := getattr(content, key, None), str) and value), "")
 
         return ToolActivityItem(
             category=category,
@@ -265,6 +293,7 @@ class TurnProcessorV2:
             content=text,
             metadata={
                 "role": role,
+                "source": metadata.get("source"),
                 "model_slug": metadata.get("model_slug"),
                 "recipient": getattr(message, "recipient", None),
                 "request_id": metadata.get("request_id"),
@@ -272,11 +301,12 @@ class TurnProcessorV2:
                 "search_queries": metadata.get("search_queries", []),
                 "search_result_groups": metadata.get("search_result_groups", []),
                 "real_author": self._real_author(message),
+                **(native_activity_metadata(message) if native else {}),
             },
         )
 
     def _tool_title(self, message: Any, content_type: str | None) -> str:
-        recipient = str(getattr(message, "recipient", "") or "").strip()
+        recipient = str(getattr(getattr(message, "author", None), "name", None) or "").strip()
         real_author = self._real_author(message)
         content_titles = {
             "system_error": "Tool Error",
@@ -327,7 +357,7 @@ class TurnProcessorV2:
         for payload in payloads:
             for candidate in self._iter_media_candidates(payload):
                 for kind, value in candidate.items():
-                    if kind in {"title", "type", "filename", "name", "mime_type"}:
+                    if kind in {"title", "type", "filename", "name", "mime_type", "image_generation"}:
                         continue
                     label = self._media_label(kind, value)
                     key = (kind, label)
@@ -343,10 +373,11 @@ class TurnProcessorV2:
                             message_id=getattr(message, "id", None),
                             metadata={
                                 "value": value,
-                                "canonical_id": self._canonical_media_id(value),
+                                "canonical_id": self._canonical_media_id(candidate.get("file_id")) or self._canonical_media_id(value),
                                 "origin": "uploaded" if getattr(getattr(message, "author", None), "role", None) == "user" else "generated",
                                 "title": candidate.get("title"),
                                 "artifact_type": candidate.get("type"),
+                                "image_generation": candidate.get("image_generation"),
                             },
                         )
                     )
@@ -369,13 +400,15 @@ class TurnProcessorV2:
             return text[len("file-service://") :]
         if text.startswith("sediment://"):
             return text[len("sediment://") :]
-        if text.startswith(("file-", "file_")):
+        if text.startswith(("file-", "file_", "CalpicoFile_")):
             return text
         return None
 
     def _iter_media_candidates(self, value: Any) -> list[dict[str, Any]]:
         candidates: list[dict[str, Any]] = []
         if isinstance(value, dict):
+            if value.get("type") == "conversation_context_citation":
+                return []
             media_keys = (
                 "url",
                 "content_url",
@@ -389,12 +422,16 @@ class TurnProcessorV2:
             )
             matched = {key: value.get(key) for key in media_keys if key in value and value.get(key)}
             if matched:
+                generation = image_generation_info(value)
+                if generation:
+                    matched["image_generation"] = generation
                 for context_key in ("title", "type", "filename", "name", "mime_type"):
                     if value.get(context_key):
                         matched[context_key] = value.get(context_key)
                 candidates.append(matched)
-            for child in value.values():
-                candidates.extend(self._iter_media_candidates(child))
+            for key, child in value.items():
+                if key != "conversation_context_citation_metadata":
+                    candidates.extend(self._iter_media_candidates(child))
         elif isinstance(value, list):
             for item in value:
                 candidates.extend(self._iter_media_candidates(item))

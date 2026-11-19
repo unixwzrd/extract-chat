@@ -62,7 +62,6 @@ def write_embedded_tables(
 
     written: list[Path] = []
     normalized_existing_names = {name.lower() for name in (existing_names or set())}
-    destination.mkdir(parents=True, exist_ok=True)
     mapping = getattr(conversation, "mapping", {}) or {}
     for turn in mapping.values():
         message = getattr(turn, "message", None)
@@ -83,6 +82,7 @@ def write_embedded_tables(
             path = destination / f"{stem}.tsv"
             if path.exists() and not force:
                 raise RuntimeError(f"Refusing to overwrite existing table: {path} (use --force)")
+            destination.mkdir(parents=True, exist_ok=True)
             with path.open("w", encoding="utf-8", newline="") as handle:
                 csv.writer(handle, dialect="excel-tab", lineterminator="\n").writerows(parser.rows)
             written.append(path)

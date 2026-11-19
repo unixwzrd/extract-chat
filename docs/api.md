@@ -5,6 +5,7 @@ This page covers the supported programmatic usage of `extract-chat`.
 Most users will use the `extract-chat` command-line tool. If you want to integrate the library into your own scripts or pipelines, the most useful building blocks are:
 
 - `Conversation` for loading and validating exported JSON
+- `parse_source` for recognizing and normalizing supported ChatGPT/Work, Dots and Hermes Desktop formats
 - `DocumentContext` for shared conversation helpers
 - `TurnProcessorV2` for converting raw conversation data into a typed render document
 - `MarkdownFormatter` and `HTMLFormatter` for rendering output
@@ -27,12 +28,29 @@ You can also validate an already-loaded Python dictionary:
 
 ```python
 import json
+from pathlib import Path
 
 from extract_chat.schemas.conversation import Conversation
 
 payload = json.loads(Path("conversation.json").read_text(encoding="utf-8"))
 conversation = Conversation.model_validate(payload)
 ```
+
+Direct `Conversation` validation expects the canonical ChatGPT-shaped model. For source-independent processing, normalize the original payload first:
+
+```python
+import json
+from pathlib import Path
+
+from extract_chat.adapters import parse_source
+from extract_chat.schemas.conversation import Conversation
+
+payload = json.loads(Path("conversation.json").read_text(encoding="utf-8"))
+parsed = parse_source(payload)
+conversation = Conversation.model_validate(parsed.conversation)
+```
+
+`parsed.adapter` identifies the source and `parsed.diagnostics` reports normalization findings. Unsupported or ambiguous exports raise `ValueError` rather than producing an empty transcript. Keep the original JSON: the normalized render model is not a replacement archive. Use the CLI for LGPT/ZIP safety, managed publication and artifact discovery rather than manually treating an archive as JSON.
 
 ## Build a Render Document
 
@@ -128,7 +146,7 @@ The Python API is usable today, but it is best treated as a practical integratio
 
 For that reason:
 
-- prefer `Conversation`, `TurnProcessorV2`, `MarkdownFormatter`, `HTMLFormatter`, and `JekyllTurnExporter`
+- prefer `parse_source`, `Conversation`, `TurnProcessorV2`, `MarkdownFormatter`, `HTMLFormatter`, and `JekyllTurnExporter`
 - avoid depending on underscored methods or test-only helpers
 - pin a release tag if you need reproducible behavior in automation
 

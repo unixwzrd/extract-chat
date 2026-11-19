@@ -4,15 +4,17 @@ from __future__ import annotations
 
 from html import escape
 from pathlib import Path
+import re
 from typing import Any
 
-try:
-    import markdown as _markdown_lib
-except ImportError:  # pragma: no cover
-    _markdown_lib = None
+from markdown_it import MarkdownIt
+from markdown_it.token import Token
 
 from extract_chat.css_manager import create_inline_css_style, get_css_content
 from extract_chat.formatters.base import BaseFormatter, FormattingError
+from extract_chat.formatters.activity_details import JSON_DISPLAY_LABELS, render_activity_details, render_context_citations, render_image_generation
+from extract_chat.formatters.turn_index import render_turn_index, turn_anchors
+from extract_chat.formatters.display_links import clean_html_links, partition_media_items, render_related_links, render_unavailable_artifact
 from extract_chat.processors.reference_processing.reference_utils import (
     build_reference_payload,
     format_apa_reference_entry,
@@ -25,6 +27,20 @@ from extract_chat.schemas.render_models import (
     ToolActivityItem,
 )
 
+_CITATION_TAG = re.compile(r'(?:<sup id="ref-source-[\w-]+">|<a (?:id="ref-source-[\w-]+"|href="#ref-target-[\w-]+")>|</(?:a|sup)>)')
+_CITATION_BLOCK = re.compile(rf"(?:{_CITATION_TAG.pattern}|\[\d+\]|[\s,])+\Z")
+
+
+def _citation_html(tokens: list[Token], index: int, options: Any, env: Any) -> str:
+    """Allow generated citation tags, not executable HTML from a transcript."""
+    content = tokens[index].content
+    return content if _CITATION_TAG.fullmatch(content) else escape(content)
+
+
+def _raw_html_block(tokens: list[Token], index: int, options: Any, env: Any) -> str:
+    content = tokens[index].content
+    return content if _CITATION_BLOCK.fullmatch(content) else f"<pre><code>{escape(content)}</code></pre>\n"
+
 
 class HTMLFormatter(BaseFormatter):
     """Render conversation logs to standalone HTML."""
@@ -32,6 +48,9 @@ class HTMLFormatter(BaseFormatter):
     def __init__(self, config: dict | None = None):
         super().__init__(config)
         self.css_file = self.config.get("css_file")
+        self._markdown = MarkdownIt("commonmark", {"html": True}).enable("table")
+        self._markdown.renderer.rules["html_inline"] = _citation_html
+        self._markdown.renderer.rules["html_block"] = _raw_html_block
 
     def get_file_extension(self) -> str:
         return ".html"
@@ -61,6 +80,8 @@ class HTMLFormatter(BaseFormatter):
             if document.title:
                 parts.append(f'<h1 class="title">{escape(document.title)}</h1>')
             parts.extend(self._render_metadata(document))
+            if self.config.get("turn_index"):
+                parts.append(render_turn_index(document.turns, self._format_timestamp, html=True))
 
             if document.system_context:
                 parts.append('<section class="system-context">')
@@ -76,7 +97,7 @@ class HTMLFormatter(BaseFormatter):
                 parts.append(self._render_turn(turn))
             parts.append("</section>")
             parts.append("</div></body></html>")
-            return self._normalize_text("\n".join(parts))
+            return self._normalize_text(clean_html_links("\n".join(parts), open_new_tabs=True))
         except Exception as exc:
             raise FormattingError(
                 f"Failed to format conversation: {exc}", self
@@ -110,15 +131,20 @@ class HTMLFormatter(BaseFormatter):
             lines.append(
                 f"<p><strong>Default Model:</strong> {escape(metadata['default_model_slug'])}</p>"
             )
+        if any(turn.tools_used for turn in document.turns):
+            label = JSON_DISPLAY_LABELS[self.config.get("tool_json", "readable")]
+            lines.append(f"<p><strong>Tool JSON:</strong> {escape(label)}</p>")
         lines.append("</div>")
         return lines
 
     def _render_turn(self, turn: RenderTurn) -> str:
-        parts = [f'<article class="block {escape(turn.role)}-block">']
-        header = f"{turn.role.title()} [Turn: {turn.turn_id}]"
-        if turn.timestamp:
-            header = f"{header} ({self._format_timestamp(turn.timestamp)})"
-        parts.append(f"<h3>{escape(header)}</h3>")
+        parts = [f'<article class="block {escape(turn.role)}-block">', turn_anchors(turn)]
+        parts.append(f"<h3>{'Exported activity' if turn.metadata.get('activity_only') else turn.role.title()}</h3>")
+        parts.append(f'<p class="turn-metadata">Turn: <code style="overflow-wrap:anywhere">{escape(turn.turn_id)}</code><br>Time: {escape(self._format_timestamp(turn.timestamp)) if turn.timestamp is not None else "Not provided"}</p>')
+        if turn.role == "assistant" and turn.metadata.get("model_slug"):
+            parts.append(f'<p class="turn-metadata"><strong>Model:</strong> {escape(str(turn.metadata["model_slug"]))}</p>')
+        if turn.metadata.get("context_citations"):
+            parts.append(render_context_citations(turn.metadata["context_citations"], html=True))
 
         if turn.role == "assistant" and turn.tools_used:
             parts.append(self._render_tools_used(turn.tools_used))
@@ -133,62 +159,33 @@ class HTMLFormatter(BaseFormatter):
                 f'<div class="content">{self._convert_markdown_to_html(content)}</div>'
             )
 
-        if turn.media_items:
-            parts.append(self._render_media(turn.media_items))
-
         if turn.role == "assistant" and turn.references_table:
             refs_html = self._render_reference_details(turn)
             if refs_html:
                 parts.append(refs_html)
 
+        artifacts, links = partition_media_items(turn.media_items, turn.references_table)
+        if artifacts:
+            parts.append(self._render_media(artifacts))
+        if links:
+            parts.append(render_related_links(links))
+
         parts.append("</article>")
         return "\n".join(parts)
 
     def _render_tools_used(self, tools: list[ToolActivityItem]) -> str:
-        parts = ['<details class="tools-used">', "<summary>Tools Used</summary>"]
-        for item in tools:
-            parts.append('<div class="tool-item">')
-            parts.append(f"<strong>{escape(item.title)}</strong>")
-            meta_bits: list[str] = []
-            if item.timestamp:
-                meta_bits.append(self._format_timestamp(item.timestamp))
-            if item.content_type:
-                meta_bits.append(item.content_type)
-            if item.turn_id:
-                meta_bits.append(f"Turn: {item.turn_id}")
-            model_slug = item.metadata.get("model_slug")
-            if model_slug:
-                meta_bits.append(f"Model: {model_slug}")
-            if meta_bits:
-                parts.append(f"<p><em>{escape(' | '.join(meta_bits))}</em></p>")
-            if item.content:
-                if item.language:
-                    parts.append(
-                        f'<pre><code class="language-{escape(item.language)}">{escape(item.content)}</code></pre>'
-                    )
-                else:
-                    parts.append(self._wrap_content(item.content))
-            search_queries = item.metadata.get("search_queries") or []
-            if search_queries:
-                parts.append("<p><strong>Search Queries</strong></p><ul>")
-                for query in search_queries:
-                    query_text = (
-                        query.get("q") if isinstance(query, dict) else str(query)
-                    )
-                    if query_text:
-                        parts.append(f"<li>{escape(query_text)}</li>")
-                parts.append("</ul>")
-            parts.append("</div>")
-        parts.append("</details>")
-        return "\n".join(parts)
+        return render_activity_details(tools, html=True, json_mode=self.config.get("tool_json", "readable"), format_time=self._format_timestamp, render_text=self._convert_markdown_to_html)
 
     def _render_media(self, media_items: list[MediaItem]) -> str:
         parts = [
             '<details class="media-items">',
-            "<summary>Media</summary>",
+            "<summary>Artifacts</summary>",
             '<div class="artifact-list">',
         ]
         for item in media_items:
+            if item.metadata.get("unavailable_reason"):
+                parts.append(render_unavailable_artifact(item))
+                continue
             label = escape(item.label)
             kind = escape(item.kind)
             local_path = item.metadata.get("local_path")
@@ -211,7 +208,7 @@ class HTMLFormatter(BaseFormatter):
                     ".avif",
                     ".svg",
                 }:
-                    body += f'<figure><img src="{href}" alt="{label}" loading="lazy" style="max-width:100%;height:auto"></figure>'
+                    body += f'<figure><a href="{href}"><img src="{href}" alt="{label}" loading="lazy" style="max-width:100%;height:auto"></a></figure>'
                 elif mime_type.startswith("audio/") or suffix in {
                     ".mp3",
                     ".wav",
@@ -229,6 +226,8 @@ class HTMLFormatter(BaseFormatter):
                     body += f'<video controls preload="metadata" src="{href}" style="max-width:100%"></video>'
                 if canonical_id:
                     body += f"<p>File ID: <code>{escape(str(canonical_id))}</code></p>"
+                if item.metadata.get("image_generation"):
+                    body += render_image_generation(item.metadata["image_generation"], html=True)
                 if original_url:
                     body += f'<p><span class="muted">Remote:</span> <code>{escape(str(original_url))}</code></p>'
                 parts.append(f'<section class="artifact">{body}</section>')
@@ -238,6 +237,8 @@ class HTMLFormatter(BaseFormatter):
                 )
             else:
                 parts.append(f"<p><strong>{kind}</strong>: <code>{label}</code></p>")
+            if not local_path and item.metadata.get("image_generation"):
+                parts.append(render_image_generation(item.metadata["image_generation"], html=True))
         parts.extend(["</div>", "</details>"])
         return "\n".join(parts)
 
@@ -347,17 +348,4 @@ class HTMLFormatter(BaseFormatter):
     def _convert_markdown_to_html(self, text: str) -> str:
         if not text:
             return ""
-        if _markdown_lib:
-            try:
-                return _markdown_lib.markdown(
-                    text, extensions=["tables", "fenced_code"]
-                )
-            except Exception:
-                pass
-        paragraphs = []
-        for block in text.split("\n\n"):
-            stripped = block.strip()
-            if not stripped:
-                continue
-            paragraphs.append(f"<p>{escape(stripped)}</p>")
-        return "\n".join(paragraphs)
+        return self._markdown.render(text)

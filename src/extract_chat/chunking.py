@@ -286,13 +286,14 @@ def build_markdown_chunks(
     *,
     stem: str,
     options: ChunkOptions | None = None,
+    formatter_config: dict | None = None,
 ) -> ChunkBundle:
     """Build deterministic chunks and validate every final file against all budgets."""
 
     options = options or ChunkOptions()
     options.validate()
     token_count = _token_counter(options.token_encoding) if options.max_tokens else None
-    formatter = MarkdownFormatter()
+    formatter = MarkdownFormatter(formatter_config)
 
     # Reserve enough space for final navigation headers before splitting turn bodies.
     reserve = _header(document, 999999, 999999, f"{stem}-part-999999-of-999999.md", f"{stem}-part-999999-of-999999.md")

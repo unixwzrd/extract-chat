@@ -1,0 +1,17 @@
+{
+  "title": "Packaging smoke fixture",
+  "conversation_id": "packaging-smoke",
+  "create_time": 1700000000,
+  "update_time": 1700000060,
+  "current_node": "answer",
+  "mapping": {
+    "question": {
+      "id": "question", "parent": null, "children": ["answer"],
+      "message": {"id": "question", "author": {"role": "user"}, "create_time": 1700000000, "content": {"content_type": "text", "parts": ["Please preserve this harmless test conversation."]}, "metadata": {}}
+    },
+    "answer": {
+      "id": "answer", "parent": "question", "children": [],
+      "message": {"id": "answer", "author": {"role": "assistant"}, "create_time": 1700000060, "content": {"content_type": "text", "parts": ["This fixture tests Markdown, HTML, Unicode café, and offline continuity chunk token limits."]}, "metadata": {}}
+    }
+  }
+}

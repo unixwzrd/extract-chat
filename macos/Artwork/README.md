@@ -1,0 +1,9 @@
+# Extract Chat app artwork
+
+`ExtractChat-Icon.png` is the active product-icon master, based on the selected ZIP archive artwork. `ExtractChat-ZIP-Icon-original.png` preserves the supplied opaque image. The image-editing tool removed only the black exterior outside the rounded tile and supplied transparent alpha while retaining the interior design. The supplied original is not modified. The unselected initial concept is retired from source assets; its local copy remains under ignored `build/retired-artwork/`.
+
+Regenerate the ten macOS 1x/2x PNG slots with `bash scripts/build_macos_icons.sh` from the repository root. Xcode compiles `Assets.xcassets/AppIcon.appiconset` into the app bundle's icon resources. The set covers 16, 32, 128, 256 and 512 points at both scales, including the 1024-pixel image. Downsampling is mechanical and preserves transparency; the master is not modified.
+
+## Active icon editing prompt
+
+Use case: background-extraction. Edit the provided Extract Chat ZIP Archive macOS icon. Remove ONLY the solid black outer background/border OUTSIDE the large rounded-square navy tile and replace that exterior with genuine transparent alpha. Keep the existing rounded tile, its blue glowing/beveled rim, every interior pixel's appearance as closely as possible, original composition, colors, highlights, shadows and relative object geometry. Preserve the two white chat bubbles, cyan curved down arrow, JSON page with the exact text 'JSON' and braces, image/video cards and yellow zip archive with the exact text 'ZIP'. Do not redesign, simplify, redraw, restyle, add or move anything. No new border, no extra shadow outside the icon, no solid black/white/colored replacement background, no checkerboard baked into pixels, no watermark. Keep the square canvas and its original framing; the black exterior corners and narrow outer margin must become transparent so the icon sits cleanly on a macOS desktop.

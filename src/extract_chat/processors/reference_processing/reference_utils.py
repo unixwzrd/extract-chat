@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from collections import deque
 from collections.abc import Mapping, Sequence
 from typing import Any, Callable, Deque, Dict, List, Tuple
@@ -383,8 +384,17 @@ def _reference_sort_key(group: Dict[str, Any]) -> tuple[int, int]:
 def _extract_year(value: Any) -> str | None:
     if not value:
         return None
+    text = str(value).strip()
+    if re.fullmatch(r"-?\d{9,}(?:\.\d+)?", text):
+        try:
+            timestamp = float(text)
+            if len(text.lstrip("-").split(".", 1)[0]) == 13:
+                timestamp /= 1000
+            return str(datetime.fromtimestamp(timestamp, timezone.utc).year)
+        except (OverflowError, OSError, ValueError):
+            return None
     try:
-        match = re.search(r"(\d{4})", str(value))
+        match = re.search(r"(\d{4})", text)
     except re.error:
         return None
     if match:

@@ -8,6 +8,7 @@ from extract_chat.processors.reference_processing.citation_processor import (
     CitationProcessor,
 )
 from extract_chat.processors.reference_processing.reference_utils import (
+    _extract_year,
     build_reference_payload,
     extract_reference_groups,
     replace_inline_citation_markers,
@@ -15,6 +16,14 @@ from extract_chat.processors.reference_processing.reference_utils import (
 from extract_chat.schemas.conversation import Conversation
 from extract_chat.schemas.render_models import RenderDocument, RenderTurn
 from tests.sample_data import SAMPLE_PATH, TURN_ID
+
+
+def test_publication_epoch_is_not_misread_as_a_year() -> None:
+    for value in (1774039130.851, "1774039130.851", 1774039130851, "2026-03-20", "March 20, 2026", 2026):
+        assert _extract_year(value) == "2026"
+    assert _extract_year(None) is None
+    assert _extract_year(0) is None
+    assert _extract_year("999999999999999999999999999") is None
 
 
 def test_transcript_formatters_preserve_authored_reference_sections() -> None:

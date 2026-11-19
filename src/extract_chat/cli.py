@@ -24,18 +24,18 @@ from urllib.parse import urlencode
 from pydantic import ValidationError
 
 from extract_chat import __version__
-from extract_chat.archive import extract_archive
+from extract_chat.archive import ARCHIVE_SUFFIXES, extract_archive
 from extract_chat.artifact_package import attach_local_artifacts, copy_artifact_package, load_artifact_entries, validate_artifact_package_destination
 from extract_chat.chunking import ChunkOptions, build_markdown_chunks, write_chunk_bundle
 from extract_chat.context.document_context import DocumentContext
 from extract_chat.formatters import HTMLFormatter, MarkdownFormatter
 from extract_chat.formatters.jekyll_formatter import JekyllTurnExporter
-from extract_chat.processors.schema_diagnostics import analyze_raw_conversation
-from extract_chat.processors.schema_normalization import normalize_raw_conversation
+from extract_chat.adapters import parse_source
 from extract_chat.processors.turn_processor import TurnProcessorV2
 from extract_chat.schemas.conversation import Conversation
 from extract_chat.schemas.render_models import RenderDocument, SchemaDiagnostics
 from extract_chat.naming import canonical_conversation_stem, sanitize_title
+from extract_chat.progress import report
 from extract_chat.tables import write_embedded_tables
 
 logging.basicConfig(
@@ -70,23 +70,6 @@ def _slugify(value: str | None) -> str:
     slug = value.lower()
     slug = _SLUG_CLEAN_RE.sub("-", slug)
     return slug.strip("-")
-
-
-def _maybe_unwrap_structure_analysis(raw_text: str) -> str:
-    try:
-        obj = json.loads(raw_text)
-        if isinstance(obj, dict) and "root_structure" in obj:
-            rs = obj.get("root_structure") or {}
-            fields = (rs.get("fields") or {}) if isinstance(rs, dict) else {}
-            flat = {}
-            for key, value in fields.items():
-                if isinstance(value, dict) and "value" in value:
-                    flat[key] = value["value"]
-            if "mapping" in flat and isinstance(flat["mapping"], dict):
-                return json.dumps(flat)
-    except Exception:
-        pass
-    return raw_text
 
 
 def _format_schema_issue_body(
@@ -292,6 +275,8 @@ def _configure_logging(*, verbose: bool, log_file: str | None) -> None:
 def _iter_media_candidates(value: Any) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     if isinstance(value, dict):
+        if value.get("type") == "conversation_context_citation":
+            return []
         media_keys = (
             "url",
             "content_url",
@@ -306,8 +291,9 @@ def _iter_media_candidates(value: Any) -> list[dict[str, Any]]:
         matched = {key: value.get(key) for key in media_keys if key in value and value.get(key)}
         if matched:
             candidates.append(matched)
-        for child in value.values():
-            candidates.extend(_iter_media_candidates(child))
+        for key, child in value.items():
+            if key != "conversation_context_citation_metadata":
+                candidates.extend(_iter_media_candidates(child))
     elif isinstance(value, list):
         for item in value:
             candidates.extend(_iter_media_candidates(item))
@@ -359,11 +345,14 @@ def _write_media_inventory(
     output_path: Path | None,
     output_dir: Path | None,
     format_name: str,
+    inventory_dir: Path | None = None,
 ) -> Path | None:
     inventory = _collect_media_inventory(conversation)
     if not inventory:
         return None
-    if format_name == "jekyll" and output_dir is not None:
+    if inventory_dir is not None:
+        base_dir = inventory_dir
+    elif format_name == "jekyll" and output_dir is not None:
         base_dir = output_dir / input_path.stem
     elif output_path is not None:
         base_dir = output_path.parent / input_path.stem
@@ -392,10 +381,10 @@ def _load_conversation(
 ) -> tuple[Conversation, SchemaDiagnostics]:
     with open(input_file, "r", encoding="utf-8") as handle:
         raw_text = handle.read()
-    raw_text = _maybe_unwrap_structure_analysis(raw_text)
     raw_obj = json.loads(raw_text)
-    diagnostics = analyze_raw_conversation(raw_obj)
-    raw_obj = normalize_raw_conversation(raw_obj, diagnostics)
+    parsed = parse_source(raw_obj)
+    diagnostics = parsed.diagnostics
+    raw_obj = parsed.conversation
     if emit_schema_warnings:
         _emit_schema_warnings(diagnostics, input_path=Path(input_file), detail=schema_warning_detail)
 
@@ -442,13 +431,23 @@ def export_file(
     jekyll_layout: str = "page",
     jekyll_reference_title: str = "References",
     chunk_options: ChunkOptions | None = None,
+    timezone: str = "local",
+    turn_index: bool = False,
+    tool_json: str = "readable",
+    artifact_destination: Path | None = None,
+    media_inventory_dir: Path | None = None,
+    working_directory: Path | None = None,
 ) -> ExportResult:
     start = time.perf_counter()
     input_path = Path(input_file)
+    if working_directory is not None and output is None and format_name != "jekyll":
+        extension = "md" if format_name == "markdown" else "html"
+        output = str(working_directory / f"{input_path.stem}.{extension}")
     warning_codes: list[str] = []
 
     try:
         _configure_logging(verbose=verbose, log_file=log_file)
+        report("reading")
         conversation, diagnostics = _load_conversation(
             input_file,
             verbose=verbose,
@@ -468,7 +467,7 @@ def export_file(
                 if not base_slug:
                     raise RuntimeError("Provide --jekyll-base-slug or ensure the conversation has a title to derive one.")
 
-                output_dir = Path(output) if output else Path(base_slug)
+                output_dir = Path(output) if output else (working_directory or Path(".")) / base_slug
                 output_dir = output_dir.expanduser().resolve()
                 if output_dir.exists() and not output_dir.is_dir():
                     raise RuntimeError(f"Output path must be a directory for Jekyll exports: {output_dir}")
@@ -536,26 +535,33 @@ def export_file(
                 )
 
             processor = TurnProcessorV2()
+            report("processing")
             document: RenderDocument = processor.process_conversation(conversation)
             document.schema_diagnostics = diagnostics
 
-            formatter = HTMLFormatter({"css_file": css_file, "verbose": verbose}) if format_name == "html" else MarkdownFormatter({"verbose": verbose})
+            config = {"css_file": css_file, "verbose": verbose, "timezone": timezone, "turn_index": turn_index, "tool_json": tool_json}
+            formatter = HTMLFormatter(config) if format_name == "html" else MarkdownFormatter(config)
             output_path = _resolve_single_output_path(input_file, output, format_name)
-            attach_local_artifacts(document=document, input_path=input_path, output_path=output_path)
+            attach_local_artifacts(document=document, input_path=input_path, output_path=output_path, artifact_destination=artifact_destination)
+            unavailable_count = sum(bool(item.metadata.get("unavailable_reason")) for turn in document.turns for item in turn.media_items)
+            if unavailable_count:
+                warning_codes.append("unavailable_artifact")
 
             if output_path.exists() and output_path.is_dir():
                 raise RuntimeError(f"Output path must be a file for markdown/html output. Got directory: {output_path}")
             if output_path.exists() and not force:
                 raise RuntimeError(f"Refusing to overwrite existing file: {output_path} (use --force)")
 
+            report("rendering")
             output_content = formatter.format_conversation(document)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(output_content, encoding="utf-8")
             logger.info("Wrote %s", output_path)
 
             if format_name == "markdown" and chunk_options is not None:
+                report("chunking")
                 chunk_stem = output_path.stem
-                bundle = build_markdown_chunks(document, stem=chunk_stem, options=chunk_options)
+                bundle = build_markdown_chunks(document, stem=chunk_stem, options=chunk_options, formatter_config={"timezone": timezone, "tool_json": tool_json})
                 chunk_dir = output_path.parent / f"{chunk_stem}-chunks"
                 write_chunk_bundle(bundle, chunk_dir, force=force)
                 logger.info("Wrote %d continuity chunks to %s", len(bundle.chunks), chunk_dir)
@@ -588,15 +594,16 @@ def export_file(
                     output_path=output_path,
                     output_dir=None,
                     format_name=format_name,
+                    inventory_dir=media_inventory_dir,
                 )
 
             return ExportResult(
                 input_path=input_path,
                 format_name=format_name,
-                status="success_with_warnings" if diagnostics.has_warnings else "success",
+                status="success_with_warnings" if warning_codes else "success",
                 output_path=output_path,
                 schema_report_path=schema_report_path,
-                warning_count=len(diagnostics.warnings),
+                warning_count=len(diagnostics.warnings) + unavailable_count,
                 warning_codes=warning_codes,
                 media_inventory_path=media_inventory_path,
                 elapsed_seconds=time.perf_counter() - start,
@@ -821,16 +828,106 @@ def run_batch_validation(
     return run_root, summary_path, csv_path
 
 
+def convert_file(source: str, args: argparse.Namespace, chunk_options: ChunkOptions | None = None, *, default_output_dir: Path | None = None) -> list[ExportResult]:
+    output_stem = Path(source).stem
+    destination_dir = Path(args.output_dir).expanduser() if args.output_dir else default_output_dir
+    if destination_dir is not None:
+        conversation, _ = _load_conversation(
+            source,
+            verbose=False,
+            schema_warning_detail="summary",
+            emit_schema_warnings=False,
+        )
+        output_stem = canonical_conversation_stem(conversation)
+    flat_output = getattr(args, "flat_output", False)
+    package_dir = Path(args.artifact_dir).expanduser() if args.artifact_dir else (destination_dir if flat_output else destination_dir / output_stem if destination_dir else None)
+    if package_dir is not None:
+        report("copying-artifacts")
+        validate_artifact_package_destination(Path(source), package_dir, force=args.force)
+    formats = ["markdown", "html"] if args.format == "both" else [args.format]
+    results: list[ExportResult] = []
+    for format_name in formats:
+        output = args.output
+        if destination_dir is not None:
+            extension = "md" if format_name == "markdown" else "html"
+            output = str(destination_dir / f"{output_stem}.{extension}")
+        results.append(
+            export_file(
+                input_file=source,
+                format_name=format_name,
+                output=output,
+                css_file=args.css_file,
+                verbose=args.verbose,
+                force=args.force,
+                log_file=args.log_file,
+                schema_warning_detail=args.schema_warning_detail,
+                media_index=args.media_index,
+                gh_file_schema_issue=args.gh_file_schema_issue,
+                gh_repo=args.gh_repo,
+                jekyll_turn_id=args.jekyll_turn_id,
+                jekyll_base_slug=args.jekyll_base_slug,
+                jekyll_layout=args.jekyll_layout,
+                jekyll_reference_title=args.jekyll_reference_title,
+                chunk_options=chunk_options if format_name == "markdown" else None,
+                timezone=getattr(args, "timezone", "local"),
+                turn_index=getattr(args, "turn_index", False),
+                tool_json=getattr(args, "tool_json", "readable"),
+                artifact_destination=package_dir if flat_output else None,
+                media_inventory_dir=destination_dir if flat_output else None,
+                working_directory=getattr(args, "_caller_directory", None),
+            )
+        )
+    if package_dir is not None:
+        copy_result = copy_artifact_package(Path(source), package_dir, force=args.force, root_relative=flat_output)
+        if copy_result.artifact_total:
+            logger.info(
+                "Packaged %d artifact file(s) to %s (%d copied, %d already materialized); %d package metadata file(s) also present",
+                copy_result.artifact_total,
+                package_dir,
+                len(copy_result.artifact_copied),
+                len(copy_result.artifact_reused),
+                copy_result.metadata_total,
+            )
+    if args.emit_tsv:
+        conversation, _ = _load_conversation(
+            source,
+            verbose=False,
+            schema_warning_detail="summary",
+            emit_schema_warnings=False,
+        )
+        root = destination_dir or (Path(args.output).expanduser().parent if args.output else getattr(args, "_caller_directory", None) or Path.cwd())
+        table_dir = (package_dir or (root / output_stem)) / "artifacts" / "derived"
+        artifact_entries = load_artifact_entries(Path(source))
+        existing_table_names = {
+            sanitize_title(Path(str(entry.get("display_name") or entry["absolute_path"])).stem)
+            for entry in artifact_entries.values()
+            if Path(entry["absolute_path"]).suffix.lower() in {".csv", ".tsv", ".xls", ".xlsx", ".numbers"}
+        }
+        table_paths = write_embedded_tables(
+            conversation,
+            table_dir,
+            force=args.force,
+            existing_names=existing_table_names,
+        )
+        logger.info("Wrote %d derived TSV table(s) to %s", len(table_paths), table_dir)
+    return results
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description=f"Extract a ChatGPT conversation from JSON or a LogGPT+ ZIP using chronological processing (v{__version__}).",
+        description=f"Extract a conversation from JSON or a ZIP-based LogGPT archive (.lgpt or .zip) using chronological processing (v{__version__}).",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=(
             "Chunk strategy and overlap mode are independent. Choose at most one overlap option and provide its numeric value.\n"
             "If no overlap option is supplied, chunking repeats one complete prior turn. Use --chunk-overlap-turns 0 for no overlap."
         ),
     )
-    parser.add_argument("input_file", nargs="?", help="Path to an input conversation JSON file or LogGPT+ ZIP archive.")
+    parser.add_argument("input_file", nargs="*", help="Conversation JSON/LGPT/ZIP files or glob patterns (quote patterns for internal expansion).")
+    parser.add_argument("--progress-json", action="store_true", help="Emit structured job events to stdout and use managed per-input result folders.")
+    parser.add_argument("--managed-output", action="store_true", help="Use safe per-input result folders even for a single file (number collisions unless --force).")
+    parser.add_argument("--timezone", default="local", help="Display time zone: local (default), UTC, IANA name such as America/Chicago, or UTC+05:30. Source epochs/UTC filenames are unchanged.")
+    parser.add_argument("--turn-index", action="store_true", help="Include a collapsed linked conversation-turn index.")
+    parser.add_argument("--tool-json", choices=["readable", "pretty", "raw"], default="readable", help="Tool JSON display: JSON-shaped decoded strings plus raw original (default), indented escaped JSON, or original escaped JSON. Thoughts/code and source files are unchanged.")
     parser.add_argument("-o", "--output", help="Output path. For batch mode this is the run root directory.")
     parser.add_argument(
         "-f",
@@ -853,7 +950,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-dir",
         help=(
-            "Destination directory. ZIP input defaults to a sibling directory matching its conversation stem; "
+            "Destination directory. Archive input defaults to a sibling directory matching its conversation stem; "
             "generated names include UTC start and update dates."
         ),
     )
@@ -950,9 +1047,43 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _apply_launcher_directory(args: argparse.Namespace, directory: str | None) -> None:
+    """Keep CLI paths relative to the caller without needing getcwd() there.
+
+    The sandboxed launcher supplies this private environment contract. Plain
+    Python CLI runs leave it unset and retain their normal behavior. Normalize
+    lexically: do not resolve symlinks, expand globs or probe permissions here.
+    """
+    if directory is None:
+        return
+    if not os.path.isabs(directory):
+        raise ValueError("The CLI launcher working directory must be absolute")
+    origin = Path(directory)
+
+    def absolute(value: str) -> str:
+        expanded = os.path.expanduser(value)
+        return expanded if os.path.isabs(expanded) else str(origin / expanded)
+
+    args.input_file = [absolute(value) for value in args.input_file]
+    for name in ("output", "output_dir", "artifact_dir", "css_file", "log_file", "batch_dir"):
+        value = getattr(args, name, None)
+        if value is not None:
+            setattr(args, name, absolute(value))
+    if args.batch_dir and args.output is None:
+        args.output = str(origin / _default_batch_output_root())
+    args._caller_directory = origin
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    try:
+        _apply_launcher_directory(args, os.environ.get("EXTRACT_CHAT_CALLER_DIRECTORY"))
+    except ValueError as error:
+        parser.error(str(error))
+
+    if args.batch_dir and args.input_file:
+        parser.error("--batch-dir cannot be combined with positional input files")
 
     if args.batch_dir:
         try:
@@ -976,9 +1107,14 @@ def main() -> None:
     if not args.input_file:
         parser.error("input_file is required unless --batch-dir is provided")
 
-    if not os.path.exists(args.input_file):
-        logger.error("Input file not found: %s", args.input_file)
-        sys.exit(1)
+    # Import at the orchestration boundary: jobs reuses this module's legacy
+    # conversion function without duplicating its render/artifact behavior.
+    from extract_chat.jobs import ConversionOptions, resolve_inputs, run_jobs
+
+    try:
+        sources = resolve_inputs(args.input_file)
+    except ValueError as error:
+        parser.error(str(error))
 
     chunk_options = None
     if args.chunk:
@@ -997,92 +1133,46 @@ def main() -> None:
             upload_batch_size=args.chunk_upload_batch_size,
         )
 
-    def run(source: str, *, default_output_dir: Path | None = None) -> list[ExportResult]:
-        output_stem = Path(source).stem
-        destination_dir = Path(args.output_dir).expanduser() if args.output_dir else default_output_dir
-        if destination_dir is not None:
-            conversation, _ = _load_conversation(
-                source,
-                verbose=False,
-                schema_warning_detail="summary",
-                emit_schema_warnings=False,
-            )
-            output_stem = canonical_conversation_stem(conversation)
-        package_dir = Path(args.artifact_dir).expanduser() if args.artifact_dir else (destination_dir / output_stem if destination_dir else None)
-        if package_dir is not None:
-            validate_artifact_package_destination(Path(source), package_dir, force=args.force)
-        formats = ["markdown", "html"] if args.format == "both" else [args.format]
-        results: list[ExportResult] = []
-        for format_name in formats:
-            output = args.output
-            if destination_dir is not None:
-                extension = "md" if format_name == "markdown" else "html"
-                output = str(destination_dir / f"{output_stem}.{extension}")
-            results.append(
-                export_file(
-                    input_file=source,
-                    format_name=format_name,
-                    output=output,
-                    css_file=args.css_file,
-                    verbose=args.verbose,
-                    force=args.force,
-                    log_file=args.log_file,
-                    schema_warning_detail=args.schema_warning_detail,
-                    media_index=args.media_index,
-                    gh_file_schema_issue=args.gh_file_schema_issue,
-                    gh_repo=args.gh_repo,
-                    jekyll_turn_id=args.jekyll_turn_id,
-                    jekyll_base_slug=args.jekyll_base_slug,
-                    jekyll_layout=args.jekyll_layout,
-                    jekyll_reference_title=args.jekyll_reference_title,
-                    chunk_options=chunk_options if format_name == "markdown" else None,
-                )
-            )
-        if package_dir is not None:
-            copy_result = copy_artifact_package(Path(source), package_dir, force=args.force)
-            if copy_result.artifact_total:
-                logger.info(
-                    "Packaged %d artifact file(s) to %s (%d copied, %d already materialized); %d package metadata file(s) also present",
-                    copy_result.artifact_total,
-                    package_dir,
-                    len(copy_result.artifact_copied),
-                    len(copy_result.artifact_reused),
-                    copy_result.metadata_total,
-                )
-        if args.emit_tsv:
-            conversation, _ = _load_conversation(
-                source,
-                verbose=False,
-                schema_warning_detail="summary",
-                emit_schema_warnings=False,
-            )
-            root = destination_dir or (Path(args.output).expanduser().parent if args.output else Path.cwd())
-            table_dir = (package_dir or (root / output_stem)) / "artifacts" / "derived"
-            artifact_entries = load_artifact_entries(Path(source))
-            existing_table_names = {
-                sanitize_title(Path(str(entry.get("display_name") or entry["absolute_path"])).stem)
-                for entry in artifact_entries.values()
-                if Path(entry["absolute_path"]).suffix.lower() in {".csv", ".tsv", ".xls", ".xlsx", ".numbers"}
-            }
-            table_paths = write_embedded_tables(
-                conversation,
-                table_dir,
-                force=args.force,
-                existing_names=existing_table_names,
-            )
-            logger.info("Wrote %d derived TSV table(s) to %s", len(table_paths), table_dir)
-        return results
+    if len(sources) > 1 or args.progress_json or args.managed_output:
+        if args.output or args.artifact_dir:
+            parser.error("Managed multi-file jobs use --output-dir, not --output or --artifact-dir")
+        if args.gh_file_schema_issue or args.log_file:
+            parser.error("Automatic GitHub filing and --log-file remain single-file/validation workflows")
+        options = ConversionOptions(
+            format=args.format, output_dir=Path(args.output_dir).expanduser() if args.output_dir else None,
+            force=args.force, css_file=args.css_file, emit_tsv=args.emit_tsv, media_index=args.media_index,
+            verbose=args.verbose, schema_warning_detail=args.schema_warning_detail, chunk_options=chunk_options,
+            timezone=args.timezone, turn_index=args.turn_index,
+            tool_json=args.tool_json,
+        )
+        def events(event: dict[str, Any]) -> None:
+            if args.progress_json:
+                print(json.dumps(event), flush=True)
+            elif event.get("event") == "finished":
+                logger.info("%s: %s%s", event["input"], event["status"], f": {event['error']}" if event.get("error") else "")
+        try:
+            records = run_jobs(sources, options, events)
+        except ValueError as error:
+            parser.error(str(error))
+        if any(item["status"] == "cancelled" for item in records):
+            sys.exit(130)
+        if any(item["status"] == "failed" for item in records):
+            sys.exit(1)
+        return
 
-    if Path(args.input_file).suffix.lower() == ".zip":
+    args.input_file = str(sources[0])
+
+
+    if Path(args.input_file).suffix.lower() in ARCHIVE_SUFFIXES:
         archive_path = Path(args.input_file).expanduser()
         with tempfile.TemporaryDirectory(prefix="extract-chat-") as temp_dir:
             extracted = extract_archive(archive_path, Path(temp_dir))
             default_output_dir = (
                 archive_path.parent / extracted.json_path.stem if not args.output_dir and not args.output else None
             )
-            results = run(str(extracted.json_path), default_output_dir=default_output_dir)
+            results = convert_file(str(extracted.json_path), args, chunk_options, default_output_dir=default_output_dir)
     else:
-        results = run(args.input_file)
+        results = convert_file(args.input_file, args, chunk_options)
     if any(result.status == "failed" for result in results):
         sys.exit(1)
 

@@ -166,7 +166,6 @@ docker/open_llama/*.bin
 .*.un~
 .*.sw[a-z]
 
-build
 project-notes/
 .master-planning
 .project-planning
@@ -180,7 +179,6 @@ data/
 
 # Symlink to data collected by venvutil functions
 .venvutil
-tmp/
 utils
 .codeiumignore
 project-planning
@@ -188,24 +186,40 @@ master-planning
 output.txt
 manifest.bak
 .spellignore
-.project-planning
-.master-planning
 output-shell.txt
 output-script.txt
 .cursor
 bashexp*
 
 pre-commit
-PA-Paper/
 PA-Paper
 
 # Codex items
 AGENTS.md
-.project-planning/
+
+# Private exports, local backups and ad-hoc validation evidence
+/private-fixtures/
+/local-artifacts/
+/backup/
+/validation/
+*.xcactivitylog
+*.trace/
 
 # Local browser automation state and generated visual QA output
 .playwright-cli/
 /output/playwright/
 
-# SwiftPM products for the tracked macOS application source
-macos/ExtractChatApp/.build/
+# Python lint caches
+.ruff_cache/
+
+# SwiftPM/Xcode generated products and per-user state (keep shared schemes/assets)
+.build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+**/.swiftpm/xcode/
+*.xcarchive/
+*.xcresult/
+*.dSYM/

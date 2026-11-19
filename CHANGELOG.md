@@ -1,6 +1,109 @@
 # Changelog
 
-## Unreleased
+## Unreleased — 1.0.0
+
+- Refresh CLI, API, archive and macOS setup documentation, separating historical experiments from the current permission model and outstanding release gates. Explicitly package active native sources and synthetic fixtures, exclude deprecated local utilities, and keep private exports, backups and generated diagnostics out of Git.
+- Declare native Downloads read/write access and a review-pending Documents-only sandbox exception, with system privacy usage descriptions and System Settings recovery for denied access. Remove automatic startup/install folder-selection prompts; retain explicit remembered-folder fallbacks for other locations. Preserve GUI destinations, original files and existing grants. Resolve CLI file options/default outputs against the captured caller directory without requiring access merely to enumerate that directory. Retire superseded packaging-only/standalone-companion experiments while retaining the product-view/native regression harness and private fixtures.
+- Add Install CLI in the native command group to save an executable `extract-chat` launcher for the installed app's explicit CLI entry point. Reuse the embedded inherited-sandbox engine instead of requiring a separate companion, external Python, or GUI conversion preferences. Preserve caller-relative paths, quoting, streams/status/signals, existing commands and original inputs. Expose explicit fallback `--grant-access`, `--list-access` and `--forget-access` actions; ordinary conversions do not open the configuration window or our folder picker. CLI output options remain independent of permissions and GUI destinations.
+- Accept ZIP-based `.lgpt` LogGPT Plus files in the CLI, native picker, Finder document opening and drops while preserving legacy ZIP/JSON support and archive safety. Register the custom type as LogGPT Plus file for Extract Chat with the product icon and primary viewer role; remain an alternate Open With choice for JSON/ZIP without taking their defaults.
+
+### Transcript presentation and fidelity
+
+- Make advanced numeric controls compact and readable, align Overlap and Files per upload batch on matching label/control rows, and group the command preview and Copy action. Strengthen visible-turn Markdown acceptance against HTML to compare order and actual semantic formatting, without requiring reasoning/tool disclosures in continuation content.
+- Preserve intentional Markdown hard line breaks through Unicode cleanup by converting their trailing-space marker to the equivalent CommonMark backslash form outside code. The stricter formatting tests reproduce and guard the previous loss of breaks.
+- Add rendered Markdown/HTML parity regression checks for all four source types, including ordered anchors, role/section headings, disclosures, body text, tool/code payloads, activity identity/time/model fields and citation/context/artifact destinations. Add deliberate-damage coverage and an opt-in private-extract audit; no private conversations are committed or fetched by tests.
+- Keep code/tool output lines intact with horizontal scrolling rather than wrapping at dashes. Add a native read-only View CSS dialog with Copy and Save As for the active default/custom stylesheet; generate the bundled default from the engine's CSS source to avoid a separate theme copy.
+- Remove unnecessary double-quote escapes directly in displayed JSON heredoc bodies, without adding a separate view or changing indentation, line breaks, other backslashes or the surrounding command. Preserve required JSON escapes, original source files and formatted/raw modes; never execute recorded code.
+- Replace unresolved sandbox download links with explicit not-captured text, artifact failure details and conversion warnings. Resolve actual Markdown links without rewriting fenced/inline code; percent-encode local artifact URLs for filenames with spaces, Unicode and parentheses. Preserve source JSON and captured artifact bytes; never fabricate a missing file.
+- Separate file/image/media artifacts from Related links, omitting web URLs already present in References. Keep citation references, source links and captured files distinct in HTML/Markdown.
+- Advertise matched result counts on native tool calls and label the returned body Result / output. Match a namespace-only tool author to its explicit direct-parent call, without guessing across intervening nodes or timestamps. Retain unmatched source results and fix singular command/file-change captions.
+- Interpret numeric citation publication timestamps as UTC dates, including epoch strings, instead of extracting misleading years such as 1774 from 2026 timestamps. Preserve conventional year/date strings and original source metadata.
+
+- Narrow the index Time column from 35% to 25%, retain the Role column at 12%, and extend excerpts from 64 to 80 characters so Contents uses the recovered space without wrapping.
+
+- Present stored-memory attribution as plain text rather than linking its title to personalization settings; retain working past-conversation links.
+- Open standalone HTML outgoing links and captured image previews in new tabs with safe opener/referrer attributes, while retaining same-page index/citation navigation and explicit download behavior. Make local captured images clickable without changing their bytes or source JSON.
+- Compact the optional conversation index with smaller single-line rows, date/time/zone labels without milliseconds/offset clutter, bounded excerpts and ellipses. Preserve full timestamp/excerpt tooltips and unchanged transcript content.
+
+- Format native activity identity as labelled metadata fields (HTML definition grid / Markdown table), including actual author/tool, date, model, channel, message status and source node ID. Label grouped commentary accurately and shorten reasoning disclosure titles without dropping source text.
+- Promote returned image-generation prompts, dimensions and generation parameters out of nested image metadata into readable tool-result and artifact sections. Associate the prompt's image link by exact asset identifier; preserve empty call arguments and source JSON, including literal backslashes and unavailable fields. Do not infer the image engine/version from a legacy metadata label.
+- Show exported activity descriptions and explicit patch/diff/file-detail fields. Explain count-only work summaries and missing patch bodies rather than inventing filenames or change operations.
+
+- Replace the flat native ChatGPT/Work activity dump with independently expandable reasoning, progress updates and paired commands/results, sharing one renderer between HTML and Markdown instead of duplicated formatter loops. Show assistant/activity model slugs, restore reasoning recap text, format exported thought summaries/content/chunks as prose, and retain relevant work/aggregate metadata under Exported fields. Do not infer missing reasoning or delegated-model identities.
+- Render memory and past-chat attribution as Context used with titles, excerpts/reasons and safe absolute ChatGPT links; exclude those records from transcript media and the optional media inventory. They are context citations, not inferred tool runs.
+- Attach activity using native parent ancestry without crossing user turns; preserve unanswered/orphan activity and unmatched calls/results. Pair tool outputs using the actual tool author and native links rather than the generic recipient `all` or timestamp adjacency. Preserve original JSON and existing Hermes presentation.
+
+- Render exported conversation Markdown with CommonMark and table support so unordered/ordered/nested lists immediately following prose become actual HTML lists. Keep code fences literal and citation anchors intact; display transcript-provided executable HTML inertly. Declare the already-bundled MIT-licensed markdown-it-py renderer directly.
+- Identify the selected tool-JSON display mode in transcript metadata. The default readable view decodes both argument and returned-result string fields once; formatted/original JSON views intentionally retain escapes.
+- Retain the exact original conversation JSON under its original filename beside Markdown/HTML in native-app and managed CLI results, rather than renaming it `conversation-source.json`. Include the copy in safe-overwrite inventories and transactional publication/cancellation cleanup; preserve original ZIP and JSON inputs.
+- Consolidate managed results into one folder with adjacent artifacts, manifests and optional media inventory/chunks. Read adjacent artifacts when reprocessing the retained JSON, while retaining legacy named-package input support. Copy only artifacts/manifests, not old renders or arbitrary sibling files; avoid empty derived-table directories. Preserve legacy non-managed CLI output layouts.
+- Remove the References-specific left-padding override so its disclosure marker and label align with Media.
+- Tighten default HTML paragraph, heading, disclosure and turn spacing. Stop treating inter-element HTML formatting whitespace as visible blank lines, preserve within-paragraph line breaks and code whitespace, and wrap long links.
+- Put each answer's References before Media in both transcript formats, retaining forward/back citation anchors.
+- Strip only `utm_source` from rendered HTTP(S) links and URL-only labels, without changing source JSON, code/tool payloads, local file paths, other query values or fragments.
+- Add remembered Advanced Tool JSON choices and `--tool-json readable|pretty|raw`, shared by ChatGPT/Work, Hermes and continuity chunks. Keep readable fields plus collapsed Raw JSON as the default; offer indented escaped JSON or the original escaped JSON instead. Never unescape thoughts or ordinary code.
+- Keep explicit final assistant answers visible even when their author provenance names a web tool. This restores replies previously folded into internal activity and keeps their citations and artifacts with the answer.
+- Normalize modern ChatGPT inline citation widgets into linked source markers while retaining per-answer reference lists and native source metadata. Render named entity labels instead of opaque widget tokens.
+- Group native same-exchange assistant progress updates beneath the final answer only when parent links confirm the sequence. Preserve progress text, tool activity, media and original turn anchors; do not combine sibling branches or unrelated replies.
+- Recognize exported user/model context without requiring an optional system-message flag. Context absent from the source is not reconstructed.
+- Separate role, turn ID and timestamp in transcript headers. Label local display times with the zone and UTC offset; add `--timezone` for UTC, IANA zones with historical DST, or fixed offsets. Source epochs and UTC-based filenames remain unchanged, including in continuity bundles.
+- Add opt-in `--turn-index` collapsed navigation to Markdown/HTML. Expose and remember index/timezone choices in the native app, retaining prior settings compatibility and reset/cancel behavior.
+- Visually group and indent advanced options separately from the equivalent command preview. The CLI launcher invokes the containing app, never the sandbox-inheriting engine directly.
+
+### Readable tool payloads
+
+- Replace the flattened field-by-field readable view with JSON-shaped output: preserve braces, arrays, quoted keys/values, indentation and comma-separated entries, but decode string newlines and quotes for human display. Keep actual literal backslashes intact and the original JSON collapsed; the display is not claimed to be machine-valid JSON.
+- Align consecutive numbered file lines as `number | text`, including single-/double-digit transitions, while preserving code indentation and leaving unrelated pipe text alone. Keep `--tool-json readable` and saved settings compatible; rename the GUI choice to Readable JSON + Raw JSON.
+- Display valid JSON tool arguments/results as JSON-shaped human-readable text, decoding one JSON layer so command newlines and quotes are readable while literal backslashes remain intact. Keep the original payload in a collapsed Raw JSON section in HTML and compatible Markdown viewers.
+- Share the readable view across Hermes and existing ChatGPT/Work tool sections without blindly unescaping thoughts, prose or ordinary source code. Invalid, duplicate-key, nonstandard or excessively deep/broad JSON falls back unchanged. Escape HTML and size Markdown fences safely.
+- Preserve the supplied ChatGPT, Work and Hermes examples as checksum-recorded private acceptance fixtures outside the application repository; do not commit conversation contents.
+
+### Hermes Desktop input
+
+- Add a dedicated, structurally recognized Hermes Desktop JSON adapter shared by CLI, ZIP, batch, continuity and native-app conversions. Validate the envelope, message identities/session membership, finite timestamps, roles and tool-call identifiers without weakening other source recognition.
+- Retain inactive/compacted original messages, separate compression summaries from user dialogue, preserve native/provenance metadata and explicitly label summary-only or activity-only exports. Do not claim a derived Hermes timeline is a native branch tree or a complete recovered history.
+- Render thoughts and paired tool arguments/results as independently collapsed sections in HTML and compatible Markdown viewers. Escape or safely fence payloads; do not execute commands or follow local paths from a chat export. Keep existing ChatGPT/Dots formatting unchanged.
+- Document current chronological ChatGPT export behavior and defer branch exploration/selected-branch extraction to a separate milestone.
+
+### First native macOS release preparation
+
+- Assemble the isolated GUI acceptance app in a fresh staging bundle and verify it before publishing to its stable path; do not overlay signed helpers and retain removed dependency resources that invalidate their signatures.
+- Explicitly use the product icon in permission/quit alerts and the extraction-details panel. Bundle the same icon into the isolated GUI acceptance host so its dialogs no longer show a generic placeholder.
+- Exclude Xcode/SwiftPM generated and per-user state, diagnostic result bundles and Ruff caches while retaining shared schemes and release assets. Remove the obsolete tracked planning symlink, preserving local agent instructions as a standalone file without deleting the external planning archive.
+- Explain missing output-folder access in a short native dialog before opening a plainly titled Select Folder picker. Remove the picker's long message banner; skip both dialogs when access is already available, remember granted access, and allow cancellation at either step without extracting or changing the destination.
+- Raise the native app and GUI acceptance host minimum to macOS 14, with Info.plist following the configured deployment target. Review Xcode 27.2 settings, enable recommended diagnostics, weak references, dead-code stripping, string/asset symbol settings and validated build-script sandboxing. Retain the existing target-level signing team and the helper's compatible lower deployment minimum.
+- Make the exit/cancel action state-aware: Quit with an empty queue or after a finished/failed/cancelled attempt; Cancel after actual queue edits or during extraction; Cancelling while cleanup is pending. Pending Cancel discards setup without quitting, active Cancel cooperatively stops the batch, and Quit exits without clearing completed results. Row selection and duplicate additions do not reset the finished state.
+- Add a remembered Close on successful completion option (off by default). Quit only after the entire batch succeeds; keep the app open after cancellation, partial failure, setup errors or helper/protocol failures. Automatically open the failure-details dialog with affected file paths, reasons and engine diagnostics instead of requiring a separate Details action.
+- Persist granted output-folder access using app-scoped bookmarks, restore it on later launches, and refresh stale bookmarks when possible. Keep access grants separate from output preferences and Reset to Defaults; do not repeatedly confirm an authorized destination or silently change it.
+- Connect OK to actual bundled-engine extraction and open the app with an empty queue instead of an automatic file picker. Keep output beside each input by default and request parent-folder access when required by App Sandbox.
+- Add live file stages/counters, queue progress, asynchronous stdout/stderr draining, cooperative cancellation, completed-result preservation, visible errors, diagnostic details and Show Results. Lock configuration and prevent duplicate jobs while extracting; normalize helper paths consistently with macOS URL aliases.
+- Configure the development team and Apple Development automatic signing in both Xcode configurations, matching LogGPT, so ordinary builds no longer select ad-hoc signing and fail the engine identity check. Explain how to correct Sign to Run Locally if it is selected explicitly.
+- Align the macOS application and Python engine at version 1.0.0, retaining app build number 1. This version is in development, not published or submission-ready.
+- Add a dedicated Extract Chat product icon and all ten macOS standard/Retina asset slots, including 1024 pixels, with reproducible downsampling from the preserved master.
+- Use the user's preferred ZIP archive artwork with a transparent exterior, preserve both originals, and explicitly load the bundled icon for About and the running app instead of relying on the placeholder-producing implicit lookup.
+- Add Reset to Defaults for all GUI conversion options, output destination and CSS selection. Keep the selected input queue intact, save only on OK, and allow Cancel to restore previously accepted settings without changing files or existing results.
+
+### macOS dependency qualification
+
+- Add a reproducible dependency/notice inventory and native macOS deployment-target audit, with regression tests distinguishing deployment targets from unrelated dylib version numbers.
+- Qualify a macOS-only tree-sitter-language-pack constraint to avoid a newer wheel's macOS 15 floor without changing UnicodeFix; retain the engine's macOS 13 baseline beneath the native app's macOS 14 minimum.
+- Build a signed, nested-app Python helper with offline token data, native-library attribution, license notices, and a separate sandboxed real-archive packaging probe.
+
+### Batch conversion and native interface
+
+- Add a shared Xcode scheme, checked embedding of the signed Python runtime, an About panel with copyright/MIT and website links, and an explicit App Store preparation checklist. Privacy and Terms drafts live in the Jekyll site, not the app. The app remains in development and is not submission-ready.
+- Grow the configuration window to fit expanded advanced options and wrapped command text, cap it at the current screen's usable height, and enable vertical scrolling only for overflow while keeping Cancel/OK visible.
+- Accept multiple JSON/ZIP inputs and quoted glob patterns, with deterministic expansion and deduplication while retaining single-file and validation workflows.
+- Add sequential managed jobs with numbered result folders, protected explicit overwrite, staged publication, per-file failure handling, cancellation cleanup, and opt-in structured progress.
+- Add a native interface with multi-file input, remembered settings, grouped advanced options, input validation, and copyable shell-quoted commands. Finder document opening and drops use the same configuration queue as Add Files.
+
+### Dots and source adapters
+
+- Add a dedicated parser for LogGPT's versioned Dots main-timeline exports, including room-member authorship, deleted-message tombstones, embedded assistant text, and linked task references.
+- Render Dots JSON and ZIP inputs through the existing Markdown, HTML, artifact-linking, and continuity-chunk pipelines.
+- Recognize Dots `CalpicoFile_` attachment identifiers when linking locally packaged artifacts.
+- Introduce a source-adapter registry and keep ChatGPT/Work normalization and diagnostics behind their own adapter. Unsupported formats fail explicitly; Hermes support awaits representative fixtures.
+- Preserve native Dots message records and label the normalized chronological mapping as derived, not a native ChatGPT branch tree. Linked task and nested reply histories remain outside the capture scope.
 
 ### 2026-10-27 - Dependency compatibility
 

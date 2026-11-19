@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from extract_chat.artifact_package import attach_local_artifacts, copy_artifact_package, load_artifact_entries, normalize_artifact_identifier
 from extract_chat.formatters.html_formatter import HTMLFormatter
 from extract_chat.formatters.markdown_formatter import MarkdownFormatter
@@ -215,3 +217,72 @@ def test_copy_package_updates_manifest_root_when_output_stem_changes(tmp_path: P
     assert entry["relative_path"] == "chat-1/artifacts/generated/note.txt"
     assert (destination.parent / entry["relative_path"]).read_text() == "note"
     assert entry["archive_relative_path"] == "chat.1/artifacts/generated/note.txt"
+
+
+def test_adjacent_artifacts_without_manifest_and_no_unrelated_copies(tmp_path: Path) -> None:
+    input_path = tmp_path / "chat.json"
+    input_path.write_text("{}", encoding="utf-8")
+    artifact = tmp_path / "artifacts/generated/note.md"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("# Note", encoding="utf-8")
+    (tmp_path / "private.txt").write_text("do not copy", encoding="utf-8")
+    document = RenderDocument(turns=[RenderTurn(role="assistant", turn_id="t", content="[Notes](sandbox:/mnt/data/note.md)")])
+    output = tmp_path / "output"
+    attach_local_artifacts(document=document, input_path=input_path, output_path=output / "chat.md", artifact_destination=output)
+    assert document.turns[0].content == "[Notes](artifacts/generated/note.md)"
+    copy_artifact_package(input_path, output, force=False)
+    assert (output / "artifacts/generated/note.md").read_bytes() == artifact.read_bytes()
+    assert not (output / "private.txt").exists()
+    assert not (output / "chat.json").exists()
+
+
+def test_adjacent_artifact_symlink_cannot_read_outside_package(tmp_path: Path) -> None:
+    root = tmp_path / "package"
+    root.mkdir()
+    input_path = root / "chat.json"
+    input_path.write_text("{}", encoding="utf-8")
+    outside = tmp_path / "secret.txt"
+    outside.write_text("secret", encoding="utf-8")
+    (root / "artifacts").mkdir()
+    (root / "artifacts/escape.txt").symlink_to(outside)
+    (root / "artifact-manifest.json").write_text(json.dumps({"artifacts": [{"canonical_id": "file-escape", "relative_path": "artifacts/escape.txt"}]}), encoding="utf-8")
+    assert load_artifact_entries(input_path) == {}
+    with pytest.raises(ValueError, match="Symlinked artifact"):
+        copy_artifact_package(input_path, tmp_path / "output", force=False)
+
+
+def test_failed_capture_is_explicit_and_never_leaves_a_working_sandbox_link(tmp_path: Path) -> None:
+    input_path = tmp_path / "chat.json"
+    input_path.write_text("{}", encoding="utf-8")
+    manifest = {"artifacts": [{"original_filename": "missing.csv", "download_status": "failed", "failure_reason": "HTTP 404 from download endpoint"}]}
+    (tmp_path / "artifact-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    raw_manifest = (tmp_path / "artifact-manifest.json").read_bytes()
+    locator = "sandbox:/workspace/scratch/session/missing.csv"
+    code = f'`[code]({locator})`\n\n```text\n[code]({locator})\n```'
+    document = RenderDocument(turns=[RenderTurn(role="assistant", turn_id="a", content=f'[Data]({locator})\n\n' + code)])
+    attach_local_artifacts(document=document, input_path=input_path, output_path=tmp_path / "out/chat.html")
+    turn = document.turns[0]
+    assert "Data (not captured)" in turn.content
+    assert code in turn.content, "Do not rewrite examples/recorded code as links"
+    assert turn.media_items[0].metadata["unavailable_reason"] == "HTTP 404 from download endpoint"
+    for formatter in (HTMLFormatter, MarkdownFormatter):
+        output = formatter().format_document(document)
+        assert "<summary>Artifacts</summary>" in output
+        assert "Not captured" in output and "HTTP 404" in output
+        assert f'href="{locator}"' not in output
+    assert not list(tmp_path.rglob("missing.csv"))
+    assert (tmp_path / "artifact-manifest.json").read_bytes() == raw_manifest
+
+
+def test_captured_filename_with_spaces_unicode_and_parentheses_has_valid_url(tmp_path: Path) -> None:
+    input_path = tmp_path / "chat.json"
+    input_path.write_text("{}", encoding="utf-8")
+    filename = "résumé (1).csv"
+    artifact = tmp_path / "artifacts" / filename
+    artifact.parent.mkdir()
+    artifact.write_bytes(b"a,b\n1,2\n")
+    document = RenderDocument(turns=[RenderTurn(role="assistant", turn_id="a", content='[Data](<sandbox:/mnt/data/résumé (1).csv>)')])
+    output = tmp_path / "out/chat.html"
+    attach_local_artifacts(document=document, input_path=input_path, output_path=output, artifact_destination=output.parent)
+    assert document.turns[0].content == '[Data](artifacts/r%C3%A9sum%C3%A9%20%281%29.csv)'
+    assert (output.parent / "artifacts" / filename).read_bytes() == artifact.read_bytes()

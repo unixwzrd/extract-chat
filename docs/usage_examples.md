@@ -9,7 +9,7 @@
   - [Working with LogGPT](#working-with-loggpt)
   - [Batch Validation](#batch-validation)
   - [Schema Drift and Diagnostics](#schema-drift-and-diagnostics)
-  - [Media Inventory Only](#media-inventory-only)
+  - [Media Inventory](#media-inventory)
   - [Development Workflow](#development-workflow)
   - [Related Docs](#related-docs)
 
@@ -19,7 +19,7 @@ Use it when you want to answer questions like:
 
 - Which format should I use?
 - How do I export one specific answer?
-- How do I process a LogGPT JSON file or LogGPT+ ZIP archive?
+- How do I process a LogGPT JSON file or LogGPT Plus LGPT/legacy ZIP archive?
 - How do I process a whole directory of JSON files?
 
 For the full option reference, see [extract_chat.md](extract_chat.md).
@@ -76,6 +76,7 @@ If you want multiple assistant turns, run the command once per turn.
 
 - `markdown`: best for archives, note-taking, diffs, and local knowledge bases
 - `html`: best for browser review and sharing
+- `both`: paired Markdown and HTML for the same conversation
 - `jekyll`: best for turning one long assistant response into publishable pages
 
 If you want the whole conversation in one output, use Markdown or HTML.
@@ -86,16 +87,26 @@ If you want one substantial assistant answer turned into web pages, use Jekyll.
 
 A common LogGPT workflow is:
 
-1. Use LogGPT Basic to download a ChatGPT conversation as JSON, or use LogGPT Plus to download a ZIP containing the JSON and its artifacts.
-2. Pass that `.json` or `.zip` file directly to `extract-chat`.
+1. Use LogGPT Basic to download a supported conversation as JSON, or use LogGPT Plus to download a ZIP-based `.lgpt` containing the JSON and its artifacts. Older `.zip` exports remain supported.
+2. Pass that `.json`, `.lgpt` or `.zip` file directly to `extract-chat`.
 3. Keep the Markdown or HTML as an archive, or export a selected assistant turn to Jekyll.
 
 ```bash
 extract-chat conversation.json --output-dir exported --format both
+extract-chat conversation.lgpt --output-dir exported --format both
 extract-chat conversation.zip --output-dir exported --format both
 ```
 
-When the input is a LogGPT+ ZIP, `extract-chat` safely extracts the archive, locates its conversation JSON automatically, copies packaged artifacts into the output directory, and uses local artifact links in Markdown and HTML where possible.
+For a LogGPT Plus archive, `extract-chat` safely extracts it, locates its conversation JSON automatically, copies packaged artifacts into the output directory, and uses local artifact links in Markdown and HTML where possible. Missing/unavailable files are labelled instead of receiving broken sandbox links.
+
+For repeatable per-input result folders, including the exact original-named JSON and available artifacts:
+
+```bash
+extract-chat --managed-output --format both --turn-index \
+  --output-dir exported '*.lgpt' '*.zip' '*.json'
+```
+
+Quote globs for internal expansion. Add `--force` only to replace recognized intact managed results; otherwise collisions receive numbered folders. Reprocess the retained JSON with different options to rediscover adjacent artifacts. Source archives and JSON remain unchanged.
 
 For the archive layout, see [media-bundle-contract.md](media-bundle-contract.md).
 
@@ -138,7 +149,7 @@ extract-chat conversation.json \
   --gh-file-schema-issue
 ```
 
-## Media Inventory Only
+## Media Inventory
 
 If you want to inspect known media references without downloading anything:
 
@@ -148,7 +159,7 @@ extract-chat conversation.json \
   --media-index
 ```
 
-This writes a `media-index.json` file under a conversation-named subdirectory beside the output.
+This writes the transcript plus a `media-index.json` file under a conversation-named subdirectory beside the output. It is not an inventory-only mode and does not retrieve remote artifacts.
 
 ## Development Workflow
 

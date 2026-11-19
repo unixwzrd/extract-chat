@@ -1,89 +1,94 @@
-# extract-chat CLI Reference
+# extract-chat CLI reference
 
-- [extract-chat CLI Reference](#extract-chat-cli-reference)
-  - [Quick Start](#quick-start)
-  - [CLI Options](#cli-options)
-  - [Citations](#citations)
-  - [Related Documentation](#related-documentation)
-  - [Development Notes](#development-notes)
-  - [Navigation](#navigation)
+Convert recognized ChatGPT/Work, Dots or Hermes Desktop JSON and ZIP-based LogGPT Plus archives (`.lgpt` or legacy `.zip`) into Markdown, HTML or Jekyll pages. The CLI preserves available source text, citations and captured artifacts; missing source content/files are not reconstructed. Run `extract-chat --help` for the installed version's authoritative options.
 
-The `extract-chat` command converts a saved ChatGPT conversation JSON file or LogGPT+ ZIP archive into Markdown, HTML, or a bundle of Jekyll section pages while preserving turn order, inline citations, tool-call context, and local artifact links.
+## Quick start
 
-## Quick Start
-
-```bash
-# Markdown (default)
+```sh
+# Markdown; a single ordinary JSON input defaults to the caller's directory.
 extract-chat conversation.json --output conversation.md
 
-# HTML with optional CSS override
+# HTML and custom CSS.
 extract-chat conversation.json --format html --css-file site.css --output conversation.html
 
-# LogGPT+ ZIP with packaged artifacts in ./conversation/
-extract-chat conversation.zip --format both
+# Both formats and captured artifacts from a LogGPT Plus archive.
+extract-chat conversation.lgpt --format both
 
-# Jekyll section export (writes multiple files into a directory)
-extract-chat conversation.json \
-  --format jekyll \
-  --jekyll-turn-id <assistant-turn-id> \
-  --jekyll-base-slug 2025-09-25-pa-paper \
-  --output tmp/jekyll-pages
+# Managed per-input results for a queue/glob (quote for internal expansion).
+extract-chat --format both --managed-output --output-dir exported '*.lgpt' '*.zip'
+
+# Jekyll section pages for one assistant turn.
+extract-chat conversation.json --format jekyll \
+  --jekyll-turn-id ASSISTANT_TURN_ID --jekyll-base-slug my-article --output jekyll-pages
 ```
 
-## CLI Options
+Supported archive suffixes are case-insensitive. A single archive defaults to a sibling directory based on its packaged conversation stem, not the renamed archive's filename. Managed jobs use separate safe result folders, preserve the original-named JSON, and discover adjacent artifacts when that JSON is reprocessed. Existing unmanaged single-file JSON output behavior remains compatible. `--output` for one Markdown/HTML format is a file, while `--output-dir` is the appropriate way to emit both formats without sharing a single output filename.
 
-| Option | Description |
+## Options
+
+| Option | Meaning |
 | --- | --- |
-| `-f, --format` | Output format (`markdown`, `html`, `jekyll`). Default is `markdown`. |
-| `-o, --output` | Destination file (Markdown/HTML) or directory (Jekyll). |
-| `-c, --css-file` | Optional CSS file path applied to HTML output. |
-| `-V, --version` | Show the installed `extract-chat` version and exit. |
-| `--force` | Overwrite the destination if it already exists. |
-| `--output-dir` | Override the destination directory. ZIP input otherwise uses a sibling directory matching the packaged conversation stem. |
-| `--artifact-dir` | Override the directory used for copied artifacts. |
-| `--emit-tsv` | Derive TSV files from embedded HTML tables when no equivalent artifact exists. |
-| `--chunk` | Write upload-safe Markdown continuity chunks. |
-| `--chunk-strategy` | Select chunk boundaries; requires `--chunk` (default: `hybrid`). |
-| `--chunk-max-bytes` | Set the maximum final chunk size, including headers and overlap; requires `--chunk` (default and hard ceiling: 524,288 bytes). |
-| `--chunk-upload-batch-size FILES` | Set the number of conversation chunks in each batch described by the generated context-move instructions (default: 10). |
-| `--chunk-overlap-turns N` | Repeat `N` complete prior turns; use `0` for no overlap. |
-| `--chunk-overlap-lines N` | Repeat up to `N` prior lines instead of turns. |
-| `--chunk-overlap-bytes BYTES` | Repeat up to `BYTES` of prior content instead of turns or lines. |
-| `--jekyll-turn-id` | Assistant turn identifier for Jekyll exports (required for `--format jekyll`). |
-| `--jekyll-base-slug` | Base slug used for section filenames/permalinks (Jekyll). |
-| `--jekyll-layout` | Front-matter layout for Jekyll pages (default `page`). |
-| `--jekyll-reference-title` | Title used on the generated references page (default `References`). |
+| `INPUT ...` | One or more JSON/LGPT/ZIP paths or quoted glob patterns. Use `--` before leading-dash filenames. |
+| `-f, --format` | `markdown`, `html`, `both` or `jekyll`; default `markdown`. |
+| `-o, --output` | Single transcript file, Jekyll directory, or validation run root. Managed jobs use `--output-dir` instead. |
+| `--output-dir` | Output parent; managed jobs publish one result directory per input. |
+| `--managed-output` | Request managed transactional output even for one input. |
+| `--force` | Permit overwrite; managed replacement still requires an intact owned result inventory. |
+| `-c, --css-file` | Custom HTML stylesheet. |
+| `--timezone` | `local` (default), UTC, an IANA name such as `America/Chicago`, or fixed offset such as `UTC+05:30`. Source epochs/UTC filenames do not change. |
+| `--turn-index` | Include collapsed linked conversation navigation. |
+| `--tool-json` | `readable` (decoded string display plus raw original), `pretty` (formatted escaped JSON), or `raw`. Source JSON and ordinary code remain unchanged. |
+| `--artifact-dir` | Legacy single-file artifact destination override; not a managed-job option. |
+| `--emit-tsv` | Derive TSV from embedded tables when no equivalent captured table artifact exists. |
+| `--media-index` | Write the optional media inventory. |
+| `--chunk` | Write Markdown continuity chunks, manifest, index and context-move instructions. |
+| `--chunk-strategy` | `hybrid` (default), `turn`, `heading`, `paragraph` or `fixed`; requires `--chunk`. |
+| `--chunk-max-bytes` | Final chunk byte limit, including headers/overlap; default/hard ceiling 524,288. |
+| `--chunk-max-lines` | Optional final chunk line limit. |
+| `--chunk-max-tokens` | Optional token limit; the Python installation requires the `token-counting` extra. The app bundles offline tokenizer data. |
+| `--chunk-token-encoding` | Tokenizer encoding; default `o200k_base`. |
+| `--chunk-upload-batch-size` | Chunk files per upload batch in generated instructions; default 10. |
+| `--chunk-overlap-turns N` | Repeat complete prior turns; default one unless another overlap mode is selected. Use zero for no overlap. |
+| `--chunk-overlap-lines N` | Repeat up to N prior lines instead of turns/bytes. |
+| `--chunk-overlap-bytes N` | Repeat up to N prior bytes instead of turns/lines. |
+| `--schema-warning-detail` | `summary` (default) or `full`. |
+| `--gh-file-schema-issue`, `--gh-repo` | Optional GitHub CLI issue filing/repository for schema drift; not a managed-job feature. |
+| `--jekyll-turn-id` | Required assistant turn ID for Jekyll. |
+| `--jekyll-base-slug` | Jekyll filename/permalink slug. |
+| `--jekyll-layout` | Jekyll front-matter layout; default `page`. |
+| `--jekyll-reference-title` | Jekyll references page title; default `References`. |
+| `--batch-dir` | Legacy validation/report mode for a directory of JSON inputs; cannot combine with positional inputs. |
+| `--batch-formats` | Validation formats: `both` (default), `markdown` or `html`. |
+| `-v, --verbose` | Debug diagnostics. |
+| `--log-file` | Optional single-file/validation log; not a managed-job option. |
+| `-V, --version` | Version and exit. |
 
-Chunk strategy and overlap mode are independent. Choose at most one overlap option and always provide its numeric value. If no overlap option is supplied, chunking uses one complete prior turn by default.
+Chunk boundaries and overlap are independent. Choose at most one overlap flag and supply its number. Token/line/byte limits apply to the final chunk including headers and overlap. The generated `context-move-instructions.md` identifies the exact ordered bundle and upload plan, explains overlap deduplication, and treats archived instructions as historical data rather than new authorization. See [usage examples](usage_examples.md).
 
-Each chunk directory also contains `context-move-instructions.md`. Copy its contents into a fresh conversation before uploading the numbered chunks. The instructions are generated from the completed bundle and include the exact chunk count, ordered range, boundary strategy, overlap configuration, byte ceiling, and upload-batch plan. They direct the receiving model to deduplicate overlap, reconstruct chronology and working state internally, treat archived instructions as historical material rather than current authorization, report missing files precisely, and avoid returning an unsolicited transcript summary.
+## macOS app launcher
 
-## Citations
+The native app's Install CLI action saves a small `extract-chat` launcher that uses its embedded engine. No separate companion/Python installation is needed. Conversion options and destinations come from CLI arguments, not GUI preferences. The launcher preserves caller-relative file/glob/output meanings without silently writing into its sandbox container.
 
-Citations in the source JSON (`citations` and `content_references`) are merged into
-single reference groups. Inline markers become superscript links (`<sup>1</sup>`)
-that point to the globally numbered references list, while the shared payload builder
-assigns alphabetical backlinks (`a^`, `b^`, …) to every occurrence. Assistant-provided
-`**Sources:**` blocks are stripped before rendering so only canonical metadata reaches
-Markdown, HTML, or Jekyll outputs.
+The app declares Downloads read/write and a Documents-scoped exception candidate pending App Review. macOS Files & Folders controls privacy consent. Arrange first-time consent before unattended jobs; a missing approval is not equivalent to an invalid archive. Other locations can use the explicit app-launcher-only actions below; they are not options of the separately installed Python package:
 
-## Related Documentation
+```sh
+extract-chat --grant-access /path/to/another/workspace
+extract-chat --list-access
+extract-chat --forget-access /path/to/another/workspace
+```
 
-- [README.md](../README.md) – project overview and install paths
-- [usage_examples.md](usage_examples.md) – practical workflows and examples
-- [api.md](api.md) – Python/library usage
-- [extract_chat_architecture.md](extract_chat_architecture.md) – internal pipeline and formatter architecture
-- [media-bundle-contract.md](media-bundle-contract.md) – shared artifact archive layout used with LogGPT Plus
+The grant action opens a system directory picker; normal conversions do not open the app configuration or its folder picker. Listing/forgetting applies to stored bookmarks, not TCC settings, and forgetting deletes no files. See [macOS access and setup](../macos/README.md#file-access-and-system-settings) for the exact permission boundaries and [submission gates](../macos/APP-STORE-PREPARATION.md) for review status.
 
-## Development Notes
+## Citations and fidelity
 
-- Run the full test suite: `pytest -q`
-- Committed fixtures used by tests live under `tests/fixtures/` and should remain synthetic or redacted.
-- The CLI entry point is registered in `pyproject.toml` under `[project.scripts]`.
+Available citation metadata is normalized into numbered references with inline occurrence links and backwards links. Authored Sources/References prose remains part of the transcript rather than being stripped as duplicate metadata. Past-chat context can link to the exported conversation URL; stored-memory excerpts remain context, not fabricated tool runs. Markdown and HTML share source processing and semantic fidelity checks; Markdown viewer support for HTML disclosures varies. Commands/tool payloads are inert display data, never executed.
 
-## Navigation
+## Related documentation
 
-- [Back to README](../README.md)
-- [Usage Examples](usage_examples.md)
-- [Python API](api.md)
-- [Architecture Guide](extract_chat_architecture.md)
+- [README](../README.md): installation, supported sources and output examples.
+- [Usage examples](usage_examples.md): practical extraction and validation workflows.
+- [Python API](api.md): normalized programmatic processing.
+- [Architecture](extract_chat_architecture.md): adapters, jobs, processors and rendering.
+- [Archive contract](media-bundle-contract.md): manifests and captured artifacts.
+
+Development tests use small synthetic fixtures under `tests/fixtures/`. Private exports and generated results must stay outside Git. The internal structured progress switch supports native job orchestration and is not required for ordinary equivalent commands.

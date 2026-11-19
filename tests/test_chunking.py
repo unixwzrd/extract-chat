@@ -201,7 +201,8 @@ def test_chunking_preserves_markdown_block_boundary_between_turns() -> None:
     )
 
     assert len(bundle.chunks) == 1
-    assert "</details>\n\n### Assistant [Turn: assistant-1]" in bundle.chunks[0].text
+    assert '</details>\n\n<a id="turn-' in bundle.chunks[0].text
+    assert "</a>\n### Assistant\n\n**Turn:** assistant-1" in bundle.chunks[0].text
 
 
 def test_force_removes_only_stale_files_from_same_chunk_bundle(tmp_path) -> None:

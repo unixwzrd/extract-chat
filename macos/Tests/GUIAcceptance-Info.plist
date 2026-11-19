@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleIdentifier</key><string>ai.unixwzrd.ExtractChat.GUIAcceptance</string>
+    <key>CFBundleExecutable</key><string>Acceptance</string>
+    <key>CFBundleName</key><string>Extract Chat GUI Acceptance</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>NSDownloadsFolderUsageDescription</key><string>Extract Chat reads downloaded conversation archives and their artifacts, and saves extracted chats beside them when you choose that destination.</string>
+    <key>NSDocumentsFolderUsageDescription</key><string>Extract Chat reads conversation archives and artifacts in Documents and writes extraction results to the Documents folders you specify, including CLI, batch, and scripted jobs.</string>
+    <key>UTImportedTypeDeclarations</key><array><dict>
+        <key>UTTypeIdentifier</key><string>ai.unixwzrd.loggpt.archive</string>
+        <key>UTTypeDescription</key><string>LogGPT Plus file for Extract Chat</string>
+        <key>UTTypeConformsTo</key><array><string>public.zip-archive</string><string>public.data</string><string>public.content</string></array>
+        <key>UTTypeTagSpecification</key><dict>
+            <key>public.filename-extension</key><array><string>lgpt</string></array>
+            <key>public.mime-type</key><string>application/vnd.loggpt.archive</string>
+        </dict>
+    </dict></array>
+    <key>CFBundleDocumentTypes</key><array><dict>
+        <key>CFBundleTypeName</key><string>LogGPT Plus file for Extract Chat</string>
+        <key>CFBundleTypeRole</key><string>Viewer</string>
+        <key>LSHandlerRank</key><string>Alternate</string>
+        <key>LSItemContentTypes</key><array><string>ai.unixwzrd.loggpt.archive</string></array>
+    </dict><dict>
+        <key>CFBundleTypeRole</key><string>Viewer</string>
+        <key>LSHandlerRank</key><string>Alternate</string>
+        <key>LSItemContentTypes</key><array><string>public.json</string><string>public.zip-archive</string></array>
+    </dict></array>
+</dict></plist>

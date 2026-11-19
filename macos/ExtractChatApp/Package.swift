@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "ExtractChatApp",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v14)],
     products: [.executable(name: "ExtractChatApp", targets: ["ExtractChatApp"])],
     targets: [.executableTarget(name: "ExtractChatApp")]
 )

@@ -64,6 +64,7 @@ _KNOWN_CONTENT_TYPES = {
     "code",
     "execution_output",
     "tool_result",
+    "tool_call",
     "tool_output",
     "system_error",
     "tether_quote",

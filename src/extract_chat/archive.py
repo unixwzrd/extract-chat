@@ -9,6 +9,10 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from extract_chat.progress import report
+
+ARCHIVE_SUFFIXES = frozenset({".zip", ".lgpt"})
+
 
 class ArchiveError(RuntimeError):
     """Raised when an archive is unsafe or does not contain a conversation."""
@@ -29,7 +33,9 @@ def extract_archive(source: Path, destination: Path) -> ExtractedArchive:
         extracted_paths: set[PurePosixPath] = set()
         portable_paths: set[str] = set()
         renamed_paths: dict[str, str] = {}
-        for info in archive.infolist():
+        members = archive.infolist()
+        for index, info in enumerate(members):
+            report("extracting", completed=index, total=len(members))
             member = PurePosixPath(_member_name(info, expected_paths))
             if member.is_absolute() or ".." in member.parts:
                 raise ArchiveError(f"Unsafe ZIP member: {info.filename}")

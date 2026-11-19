@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from html import escape
 from pathlib import Path
+import re
 from typing import Any
 
 from extract_chat.formatters.base import BaseFormatter, FormattingError
+from extract_chat.formatters.activity_details import JSON_DISPLAY_LABELS, render_activity_details, render_context_citations, render_image_generation
+from extract_chat.formatters.turn_index import render_turn_index, turn_anchors
+from extract_chat.formatters.display_links import clean_markdown_links, partition_media_items, render_related_links, render_unavailable_artifact
 from extract_chat.processors.reference_processing.reference_utils import (
     build_reference_payload,
     format_apa_reference_entry,
@@ -22,6 +26,12 @@ from extract_chat.schemas.render_models import (
 
 class MarkdownFormatter(BaseFormatter):
     """Render conversation logs to Markdown."""
+
+    def _normalize_text(self, text: str) -> str:
+        # Unicode cleanup trims trailing spaces. Encode intentional CommonMark
+        # hard breaks in their equivalent backslash form first, outside code.
+        protected = clean_markdown_links(text, transform=lambda span: re.sub(r" {2,}(?=\r?\n)", lambda match: "\\", span))
+        return super()._normalize_text(protected)
 
     def get_file_extension(self) -> str:
         return "md"
@@ -60,9 +70,13 @@ class MarkdownFormatter(BaseFormatter):
             if metadata.get("default_model_slug"):
                 lines.append(f"**Default Model:** {metadata['default_model_slug']}")
                 lines.append("")
+            if any(turn.tools_used for turn in document.turns):
+                lines.extend([f"**Tool JSON:** {JSON_DISPLAY_LABELS[self.config.get('tool_json', 'readable')]}", ""])
 
             lines.append("---")
             lines.append("")
+            if self.config.get("turn_index"):
+                lines.extend([render_turn_index(document.turns, self._format_timestamp, html=False), ""])
 
             if document.system_context:
                 lines.append("## System Context")
@@ -81,7 +95,7 @@ class MarkdownFormatter(BaseFormatter):
             for turn in document.turns:
                 lines.extend(self._render_turn(turn))
 
-            return self._normalize_text("\n".join(lines).rstrip() + "\n")
+            return self._normalize_text(clean_markdown_links("\n".join(lines).rstrip() + "\n"))
         except Exception as exc:
             raise FormattingError(
                 f"Failed to format conversation: {exc}", self
@@ -154,10 +168,14 @@ class MarkdownFormatter(BaseFormatter):
         return document
 
     def _render_turn(self, turn: RenderTurn) -> list[str]:
-        lines = [f"### {turn.role.title()} [Turn: {turn.turn_id}]"]
-        if turn.timestamp:
-            lines.append(f"*{self._format_timestamp(turn.timestamp)}*")
+        lines = [turn_anchors(turn), f"### {'Exported activity' if turn.metadata.get('activity_only') else turn.role.title()}", "", f"**Turn:** {turn.turn_id}", ""]
+        if turn.timestamp is not None:
+            lines.append(f"**Time:** {self._format_timestamp(turn.timestamp)}")
         lines.append("")
+        if turn.role == "assistant" and turn.metadata.get("model_slug"):
+            lines.extend([f'**Model:** {escape(str(turn.metadata["model_slug"]))}', ""])
+        if turn.metadata.get("context_citations"):
+            lines.extend([render_context_citations(turn.metadata["context_citations"], html=False), ""])
 
         if turn.role == "assistant" and turn.tools_used:
             lines.append(self._render_tools_used(turn.tools_used))
@@ -172,63 +190,36 @@ class MarkdownFormatter(BaseFormatter):
             lines.append(content.strip())
             lines.append("")
 
-        if turn.media_items:
-            lines.append(self._render_media(turn.media_items))
-            lines.append("")
-
         if turn.role == "assistant" and turn.references_table:
             rendered_references = self._render_reference_details(turn)
             if rendered_references:
                 lines.append(rendered_references)
                 lines.append("")
 
+        artifacts, links = partition_media_items(turn.media_items, turn.references_table)
+        if artifacts:
+            lines.append(self._render_media(artifacts))
+            lines.append("")
+        if links:
+            lines.append(render_related_links(links))
+            lines.append("")
+
         return lines
 
     def render_turn(self, turn: RenderTurn) -> str:
         """Render one complete turn for chunking and other structured exports."""
 
-        return self._normalize_text("\n".join(self._render_turn(turn)).rstrip() + "\n")
+        return self._normalize_text(clean_markdown_links("\n".join(self._render_turn(turn)).rstrip() + "\n"))
 
     def _render_tools_used(self, tools: list[ToolActivityItem]) -> str:
-        lines = ["<details>", "<summary>Tools Used</summary>", ""]
-        for item in tools:
-            lines.append(f"**{item.title}**")
-            meta_bits: list[str] = []
-            if item.timestamp:
-                meta_bits.append(self._format_timestamp(item.timestamp))
-            if item.content_type:
-                meta_bits.append(item.content_type)
-            if item.turn_id:
-                meta_bits.append(f"Turn: {item.turn_id}")
-            model_slug = item.metadata.get("model_slug")
-            if model_slug:
-                meta_bits.append(f"Model: {model_slug}")
-            if meta_bits:
-                lines.append(f"*{' | '.join(meta_bits)}*")
-            if item.content:
-                if item.language:
-                    lines.append(f"```{item.language}")
-                    lines.append(item.content)
-                    lines.append("```")
-                else:
-                    lines.append(item.content)
-            search_queries = item.metadata.get("search_queries") or []
-            if search_queries:
-                lines.append("")
-                lines.append("Search Queries:")
-                for query in search_queries:
-                    query_text = (
-                        query.get("q") if isinstance(query, dict) else str(query)
-                    )
-                    if query_text:
-                        lines.append(f"- {query_text}")
-            lines.append("")
-        lines.append("</details>")
-        return "\n".join(lines).strip()
+        return render_activity_details(tools, html=False, json_mode=self.config.get("tool_json", "readable"), format_time=self._format_timestamp)
 
     def _render_media(self, media_items: list[MediaItem]) -> str:
-        lines = ["<details>", "<summary>Media</summary>", ""]
+        lines = ["<details>", "<summary>Artifacts</summary>", ""]
         for item in media_items:
+            if item.metadata.get("unavailable_reason"):
+                lines.append(render_unavailable_artifact(item))
+                continue
             lines.append(f"**{item.kind}**")
             local_path = item.metadata.get("local_path")
             original_url = item.metadata.get("original_url")
@@ -282,6 +273,8 @@ class MarkdownFormatter(BaseFormatter):
                 lines.append(f"- Link: [{item.label}]({item.url})")
             else:
                 lines.append(f"- Value: `{item.label}`")
+            if item.metadata.get("image_generation"):
+                lines.append(render_image_generation(item.metadata["image_generation"], html=False))
             lines.append("")
         lines.append("</details>")
         return "\n".join(lines).strip()

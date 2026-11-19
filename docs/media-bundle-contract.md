@@ -5,12 +5,14 @@ LogGPT Plus captures authenticated conversation data and artifacts. extract-chat
 performs offline rendering, output naming, embedded-table derivation, and
 continuity chunking.
 
+New Plus downloads use `.lgpt`, a ZIP container associated with Extract Chat. Legacy `.zip` archives use the same layout and remain accepted; the suffix does not change the manifest schema or archive-safety checks.
+
 ## Version 2 layout
 
 For a canonical conversation stem `<stem>`:
 
 ```text
-<stem>.zip
+<stem>.lgpt (or legacy <stem>.zip)
 ├── <stem>.json
 └── <stem>/
     ├── artifact-manifest.json

@@ -1,0 +1,11 @@
+graft docs
+graft macos
+graft scripts
+graft tests
+prune src/extract_chat/utils
+prune macos/ExtractChatApp/.build
+prune macos/ExtractChatApp/.swiftpm
+prune macos/ExtractChatApp/DerivedData
+prune macos/ExtractChatApp/ExtractChatApp.xcodeproj/xcuserdata
+prune macos/ExtractChatApp/ExtractChatApp.xcodeproj/project.xcworkspace/xcuserdata
+global-exclude .DS_Store *.py[cod] *.xcuserstate *.xcactivitylog

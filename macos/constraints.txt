@@ -1,0 +1,3 @@
+# macOS 13 candidate: bundled parsers, no runtime grammar downloads.
+# Keep this packaging constraint out of the cross-platform Python requirements.
+tree-sitter-language-pack==0.9.1

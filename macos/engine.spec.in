@@ -1,0 +1,25 @@
+# PyInstaller spec template: a console helper in a correctly laid out nested app.
+import os
+from pathlib import Path
+from importlib.metadata import version
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
+
+root = Path(os.environ["EXTRACT_CHAT_SOURCE_ROOT"])
+identity = os.environ.get("EXTRACT_CHAT_SIGN_IDENTITY") or None
+datas = [(str(root / "build/macos-qualification/tokenizer-cache"), "tokenizer-cache"),
+         (str(Path(SPECPATH) / "default.css"), "."),
+         (str(root / "build/macos-qualification/audit-compatible/THIRD-PARTY-NOTICES.txt"), ".")]
+for package in ("unicodefix", "mdformat", "mdformat-gfm", "mdformat-frontmatter"):
+    datas += copy_metadata(package)
+analysis = Analysis([str(root / "src/extract_chat/cli.py")], pathex=[str(root / "src")],
+                    datas=datas, hiddenimports=collect_submodules("tiktoken_ext"),
+                    runtime_hooks=[str(root / "macos/runtime_hook.py")],
+                    excludes=["readline", "tkinter"])
+archive = PYZ(analysis.pure)
+executable = EXE(archive, analysis.scripts, [], exclude_binaries=True,
+                 name="extract-chat", console=True, codesign_identity=identity,
+                 entitlements_file=str(root / "macos/Helper.entitlements"))
+collection = COLLECT(executable, analysis.binaries, analysis.datas, name="extract-chat")
+application = BUNDLE(collection, name="ExtractChatEngine.app",
+                     bundle_identifier="ai.unixwzrd.ExtractChat.Engine",
+                     version=version("extract-chat"), info_plist={"LSMinimumSystemVersion": "13.0", "LSUIElement": True})

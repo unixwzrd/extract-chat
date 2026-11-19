@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 import ftfy
+from extract_chat.display_time import display_timestamp, resolve_timezone
 
 
 # Note: Avoid importing Conversation here to keep formatter base decoupled
@@ -29,6 +30,9 @@ class BaseFormatter(ABC):
             config: Optional configuration dictionary
         """
         self.config = config or {}
+        resolve_timezone(self.config.get("timezone", "local"))
+        if self.config.get("tool_json", "readable") not in {"readable", "pretty", "raw"}:
+            raise ValueError("Tool JSON display must be readable, pretty, or raw.")
 
     @abstractmethod
     def format_document(self, document: Any) -> str:
@@ -243,15 +247,11 @@ class BaseFormatter(ABC):
         Returns:
             Formatted timestamp string
         """
-        if not timestamp:
+        if timestamp is None:
             return ""
         
         try:
-            if isinstance(timestamp, datetime):
-                value = timestamp.astimezone() if timestamp.tzinfo is not None else timestamp
-            else:
-                value = datetime.fromtimestamp(float(timestamp))
-            return value.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+            return display_timestamp(timestamp, self.config.get("timezone", "local"))
         except (AttributeError, OSError, OverflowError, TypeError, ValueError):
             return str(timestamp)
 

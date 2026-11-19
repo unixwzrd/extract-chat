@@ -19,8 +19,9 @@ def test_extract_archive_finds_root_json(tmp_path: Path) -> None:
     assert (extracted.root / "chat/artifacts/generated/chart.png").read_bytes() == b"png"
 
 
-def test_extract_archive_rejects_traversal(tmp_path: Path) -> None:
-    source = tmp_path / "bad.zip"
+@pytest.mark.parametrize("extension", ["zip", "lgpt"])
+def test_extract_archive_rejects_traversal(tmp_path: Path, extension: str) -> None:
+    source = tmp_path / f"bad.{extension}"
     with zipfile.ZipFile(source, "w") as archive:
         archive.writestr("../escape.json", "{}")
     with pytest.raises(ArchiveError, match="Unsafe"):
