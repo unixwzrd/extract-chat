@@ -1,7 +1,13 @@
 # Changelog
 
-## Unreleased — 1.0.0
+## 2026-11-19 — 1.0.0
 
+GitHub source/support tag: `v1.0.0`. The native macOS build has been uploaded to App Store Connect; this source tag does not indicate App Store approval or public availability of the native app.
+
+Known limitation: the inspected native build 1 validation/upload reports contain 91 missing-dSYM warnings for the embedded Python engine and native dependencies. The Swift app's dSYM is present and UUID-matched. Runtime symbol collection remains follow-up work; these warnings have not been fixed by the architecture or navigator changes. See [runtime symbol coverage](macos/APP-STORE-PREPARATION.md#runtime-debug-symbol-limitation).
+
+- Repair the Xcode navigator's entitlements reference to the project-root signing file; the existing signed permissions are unchanged.
+- Target Apple Silicon (`arm64`) in native Debug and Release builds by retaining Standard Architectures and excluding `x86_64` for macOS, matching the bundled engine even when the Architectures field returns to Standard. Intel/universal support is deferred; retain all engine architecture/signature checks.
 - Refresh CLI, API, archive and macOS setup documentation, separating historical experiments from the current permission model and outstanding release gates. Explicitly package active native sources and synthetic fixtures, exclude deprecated local utilities, and keep private exports, backups and generated diagnostics out of Git.
 - Declare native Downloads read/write access and a review-pending Documents-only sandbox exception, with system privacy usage descriptions and System Settings recovery for denied access. Remove automatic startup/install folder-selection prompts; retain explicit remembered-folder fallbacks for other locations. Preserve GUI destinations, original files and existing grants. Resolve CLI file options/default outputs against the captured caller directory without requiring access merely to enumerate that directory. Retire superseded packaging-only/standalone-companion experiments while retaining the product-view/native regression harness and private fixtures.
 - Add Install CLI in the native command group to save an executable `extract-chat` launcher for the installed app's explicit CLI entry point. Reuse the embedded inherited-sandbox engine instead of requiring a separate companion, external Python, or GUI conversion preferences. Preserve caller-relative paths, quoting, streams/status/signals, existing commands and original inputs. Expose explicit fallback `--grant-access`, `--list-access` and `--forget-access` actions; ordinary conversions do not open the configuration window or our folder picker. CLI output options remain independent of permissions and GUI destinations.
@@ -78,7 +84,7 @@
 - Connect OK to actual bundled-engine extraction and open the app with an empty queue instead of an automatic file picker. Keep output beside each input by default and request parent-folder access when required by App Sandbox.
 - Add live file stages/counters, queue progress, asynchronous stdout/stderr draining, cooperative cancellation, completed-result preservation, visible errors, diagnostic details and Show Results. Lock configuration and prevent duplicate jobs while extracting; normalize helper paths consistently with macOS URL aliases.
 - Configure the development team and Apple Development automatic signing in both Xcode configurations, matching LogGPT, so ordinary builds no longer select ad-hoc signing and fail the engine identity check. Explain how to correct Sign to Run Locally if it is selected explicitly.
-- Align the macOS application and Python engine at version 1.0.0, retaining app build number 1. This version is in development, not published or submission-ready.
+- Align the macOS application and Python engine at version 1.0.0, retaining app build number 1. The GitHub source/support tag is separate from App Store review approval and native-app availability.
 - Add a dedicated Extract Chat product icon and all ten macOS standard/Retina asset slots, including 1024 pixels, with reproducible downsampling from the preserved master.
 - Use the user's preferred ZIP archive artwork with a transparent exterior, preserve both originals, and explicitly load the bundled icon for About and the running app instead of relying on the placeholder-producing implicit lookup.
 - Add Reset to Defaults for all GUI conversion options, output destination and CSS selection. Keep the selected input queue intact, save only on OK, and allow Cancel to restore previously accepted settings without changing files or existing results.

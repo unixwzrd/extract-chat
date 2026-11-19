@@ -15,6 +15,7 @@
   - [Python API](#python-api)
   - [Known Gaps](#known-gaps)
   - [Development](#development)
+  - [Support](#support)
   - [Contributing](#contributing)
   - [Support This and Other Projects](#support-this-and-other-projects)
   - [Copyright](#copyright)
@@ -24,11 +25,13 @@
 
 `extract-chat` converts ChatGPT/Work, LogGPT Dots, and Hermes Desktop conversation JSON or compatible ZIP-based archives (`.lgpt` and legacy `.zip`) into readable Markdown or HTML conversation logs, with preserved citation links, local artifacts, schema diagnostics, and collapsible tool activity.
 
-Version 1.0.0 is in development, including the first native macOS application, requiring macOS 14 or later. The app and Python engine share this version; it is not yet a published release. The GUI includes a product icon, Reset to Defaults, and actual batch extraction through its bundled engine, with progress, cancellation and visible error/result handling. Release qualification is still pending. The pinned v0.7.8 installation example below is retained until the new version is tagged.
+Version 1.0.0 introduces the first native macOS application, requiring macOS 14 or later. The app and Python engine share this version, with source and support documentation identified by the `v1.0.0` GitHub tag. The GUI includes a product icon, Reset to Defaults, and batch extraction through its bundled engine, with progress, cancellation and visible error/result handling. The native build has been uploaded to App Store Connect; the GitHub source tag does not establish App Store approval or availability. See the [release checklist](macos/APP-STORE-PREPARATION.md) for remaining qualification and known runtime-symbol warnings.
 
-Unreleased Dots support accepts LogGPT's `loggpt.dots` version 1 JSON or ZIP using the same CLI options, including `--format both --chunk`. A dedicated adapter resolves human/Dot authorship from room membership and produces a chronological transcript. Linked task and nested reply histories are not included; their references remain in the source JSON. Packaged direct attachments link to local files. Existing ChatGPT and ChatGPT Work inputs retain their normalization and schema diagnostics.
+The initial native macOS release is Apple Silicon-only (`arm64`). Intel/universal support is deferred until a matching engine and its native dependencies are qualified; the app's macOS minimum remains 14.
 
-Unreleased Hermes Desktop support recognizes the desktop export envelope (`exported_at`, `session_id`, `message_count`, `messages`) and validates message identities, roles, timestamps, session membership and tool calls through a separate source adapter. It retains original messages even when marked compacted/inactive, without repeating compression summaries as user prompts. Original summary records and native metadata remain in the source JSON and normalized provenance; summary-only exports are explicitly labeled, not claimed to be full histories. Thoughts and paired tool-call arguments/results are individually collapsed in HTML and in Markdown viewers supporting `<details>`. Commands and results are inert text, never replayed. A raw export does not contain the files merely mentioned in its tool output, and no referenced local path is automatically opened or copied. The same format, continuity, batch and native-GUI workflows apply; Hermes CLI JSONL and other unverified Hermes formats are not included in this adapter.
+Dots support accepts LogGPT's `loggpt.dots` version 1 JSON or ZIP using the same CLI options, including `--format both --chunk`. A dedicated adapter resolves human/Dot authorship from room membership and produces a chronological transcript. Linked task and nested reply histories are not included; their references remain in the source JSON. Packaged direct attachments link to local files. Existing ChatGPT and ChatGPT Work inputs retain their normalization and schema diagnostics.
+
+Hermes Desktop support recognizes the desktop export envelope (`exported_at`, `session_id`, `message_count`, `messages`) and validates message identities, roles, timestamps, session membership and tool calls through a separate source adapter. It retains original messages even when marked compacted/inactive, without repeating compression summaries as user prompts. Original summary records and native metadata remain in the source JSON and normalized provenance; summary-only exports are explicitly labeled, not claimed to be full histories. Thoughts and paired tool-call arguments/results are individually collapsed in HTML and in Markdown viewers supporting `<details>`. Commands and results are inert text, never replayed. A raw export does not contain the files merely mentioned in its tool output, and no referenced local path is automatically opened or copied. The same format, continuity, batch and native-GUI workflows apply; Hermes CLI JSONL and other unverified Hermes formats are not included in this adapter.
 
 Tool arguments/results containing valid JSON objects or arrays have a JSON-shaped readable display plus a collapsed Raw JSON view. The readable display keeps braces, brackets, quoted keys/values, indentation and commas between key/value pairs, but decodes string escapes exactly once: encoded newlines become real line breaks and quoted commands become readable, while a literal backslash-n, shell escape or Windows path remains literal after decoding. It is a human-readable representation, not necessarily valid machine JSON; the original stays in Raw JSON and the retained original-named source file. Consecutive numbered file lines use a right-aligned `number | text` gutter with padding after the separator, retaining code indentation. Thoughts, prose and non-JSON code are not globally unescaped. Malformed, duplicate-key or excessively structured payloads keep their original view instead of being guessed at. This presentation is shared by Hermes and the existing ChatGPT/Work tool sections; their source-specific grouping remains unchanged.
 
@@ -163,7 +166,7 @@ pip install "git+https://github.com/unixwzrd/extract-chat.git"
 If you want a specific release:
 
 ```bash
-pip install "git+https://github.com/unixwzrd/extract-chat.git@v0.7.8"
+pip install "git+https://github.com/unixwzrd/extract-chat.git@v1.0.0"
 ```
 
 If you prefer to clone the repository first:
@@ -208,7 +211,7 @@ Notes:
 
 ## Quick Start
 
-Multiple conversations (unreleased):
+Multiple conversations:
 
 ```bash
 extract-chat --format both --chunk --output-dir converted first.zip second.json
@@ -301,6 +304,8 @@ The short version is:
 
 ## Known Gaps
 
+- The native build 1 upload reports missing runtime dSYMs for the embedded engine/dependencies; the main Swift app's symbols are present. This reduces crash-diagnostic detail inside those components and remains a [packaging follow-up](macos/APP-STORE-PREPARATION.md#runtime-debug-symbol-limitation).
+- Next release: recognize embedded HTML/JavaScript app blocks, structured chart widgets and newer tool-group metadata in ChatGPT Work exports. Preserve/show exported source and code/output without fabricating execution details missing from the JSON; preview safety and offline fallbacks remain to be designed. See the [investigated backlog](docs/implementation-audit.md#next-release-backlog-embedded-apps-charts-and-activity-metadata).
 - Authenticated media downloading still belongs to `LogGPT Plus`, not `extract-chat`.
 - The native ExtractChatApp still requires a separately built, signed helper for App Store distribution.
 - Spreadsheet formats that require a workbook parser are linked as original artifacts rather than rendered inline.
@@ -337,6 +342,10 @@ For the fuller command reference and deeper examples, use:
 
 - [docs/extract_chat.md](docs/extract_chat.md)
 - [docs/usage_examples.md](docs/usage_examples.md)
+
+## Support
+
+For version 1.0.0, use the [tagged source and documentation](https://github.com/unixwzrd/extract-chat/tree/v1.0.0) and [changelog](CHANGELOG.md). Report bugs through [GitHub Issues](https://github.com/unixwzrd/extract-chat/issues), including the app/CLI version, macOS or other host OS version, input source (ChatGPT/Work, Dots or Hermes), file type, selected options and sanitized error text. Prefer a small synthetic reproducer. Do not post private conversation exports, credentials, signed download URLs or personal filesystem paths in public issues. The [product support page](https://unixwzrd.ai/projects/extract-chat/) is the native app's stable support entry point.
 
 ## Contributing
 

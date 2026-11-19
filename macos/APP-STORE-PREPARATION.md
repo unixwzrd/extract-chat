@@ -1,12 +1,14 @@
 # Extract Chat: Xcode and App Store preparation
 
-Status: unreleased native application, November 19, 2026. Development builds and local acceptance are not App Store distribution qualification. No submission or publication is authorized by this document. Version 1.0.0 and app build 1 are the selected initial native release values.
+Status: GitHub source/support version 1.0.0, November 19, 2026. Native app build 1 has been uploaded to App Store Connect and appeared in TestFlight with its product icon; the user reports completing export compliance. This does not establish App Store review approval or public availability. Development builds/local acceptance do not close the remaining distribution gates, and this document does not authorize further uploads, review submissions or publication.
 
 ## Current architecture
 
 One sandboxed application provides the GUI and an explicit CLI entry point. Both use the same embedded frozen Python engine at `Contents/Helpers/ExtractChatEngine.app`. There is no separately installed CLI companion, external Python requirement, PATH fallback to a developer installation, or direct Terminal execution of the inherited engine. Install CLI saves a small executable `extract-chat` launcher for the containing app; updating that app in place updates its CLI. See [app-installed command line](README.md#app-installed-command-line) for installation, folder permissions, normal CLI options and recovery commands.
 
-The main app and GUI acceptance host require macOS 14. The frozen helper retains its macOS 13 compatibility baseline. The current prepared runtime is Apple Silicon only; do not claim Intel support or bypass the embedded-engine architecture check. App Sandbox and Hardened Runtime remain enabled. The engine has exactly the sandbox and inherit entitlements; the containing app declares Downloads read/write, the Documents-only exception candidate below, user-selected read/write, executable-writing and app-scoped bookmarks.
+The initial native release targets Apple Silicon (`arm64`) on macOS 14 or later, explicitly configured for both Debug and Release. The GUI acceptance host has the same platform minimum. The frozen helper retains its macOS 13 compatibility baseline. Intel/universal support is deferred to a later release, not a gate for this Apple Silicon release; it requires a matching qualified engine and native dependencies before widening the target architectures. Do not claim Intel support or bypass the embedded-engine architecture check. App Sandbox and Hardened Runtime remain enabled. The engine has exactly the sandbox and inherit entitlements; the containing app declares Downloads read/write, the Documents-only exception candidate below, user-selected read/write, executable-writing and app-scoped bookmarks.
+
+The app retains `ARCHS = $(ARCHS_STANDARD)` and sets `EXCLUDED_ARCHS[sdk=macosx*] = x86_64` for both Debug and Release. The resulting Archive architecture is `arm64` even when Xcode displays Standard Architectures (Apple silicon, Intel). Check the exclusion and effective build settings rather than that label alone. Apple documents [Excluded Architectures](https://developer.apple.com/documentation/xcode/build-settings-reference#Excluded-Architectures) as removing unsupported architectures from `ARCHS`, including when a higher-level setting overrides it. A future universal release must remove this exclusion only after qualifying its matching engine/dependencies; the engine architecture check remains unchanged.
 
 The earlier custom first-run/install folder-selection offer has been removed. On real Downloads/Documents operations, macOS manages privacy consent using the bundled usage descriptions. Access failures explain Privacy & Security > Files & Folders and offer Open System Settings; Help > File Access Settings… also opens the system application. File > Authorize Working Folders… and `extract-chat --grant-access` remain explicit fallbacks for other paths. Existing bookmarks remain usable and conversion resets preserve them. No permission approval, TCC reset, TCC-database edit, or Full Disk Access grant is performed automatically. For CLI jobs, the system may attribute privacy access to the launcher/terminal application; establish consent interactively before scheduling background work.
 
@@ -62,6 +64,14 @@ Dependency and frozen-runtime audits are described in [DEPENDENCY-AUDIT.md](DEPE
 
 The November 19 commit-cleanup check passed 269 Python tests with one optional private-fixture skip, all four private parity cases, native option/execution/window smoke tests, SwiftPM, Xcode Debug and strict recursive app-signature verification. The same Python suite passed from a freshly unpacked source distribution. Wheel/source archives excluded deprecated local utilities and generated/private state; the source archive included the active native build sources, icon assets and synthetic fixtures. These are source/development checks, not distribution or App Review approval.
 
+The November 19 architecture follow-up completed an actual development-signed Archive in a separate ignored validation directory with the Mac-only Intel exclusion, not a command-line architecture override. The archived application is arm64, the engine check passed unchanged, and strict recursive signature verification passed. The Python suite passed 270 tests with one optional private-fixture skip. This is not App Store export/upload validation or approval of the Documents entitlement. The architecture exclusion must remain visible in both the saved project and the open Xcode target settings.
+
+## Runtime debug-symbol limitation
+
+The inspected version 1.0.0/build 1 validation and upload reports contain the same 91 missing-dSYM warnings for the embedded Python engine and its native libraries/extensions. The archive includes a UUID-matched dSYM for the main Swift app. The symbol warnings are distinct from binary upload success, icon processing and entitlement signing; upload receipts show success and the user confirmed the processed TestFlight build. They have not been resolved by re-archiving or the architecture/navigator fixes.
+
+Follow-up: obtain UUID-matched vendor symbols or rebuild the runtime/native dependencies with debug information, preserve those dSYMs through packaging, collect them into the Xcode archive and verify coverage against every shipped Mach-O UUID. The inspected engine and representative Python/Pillow/Pydantic binaries have no DWARF segment or debug-map object entries from which to regenerate full debug information. Merely changing the Swift app's Debug Information Format or rerunning `dsymutil` on stripped components does not supply that missing information. Retain the actual uploaded archive and existing symbols. See [Apple's symbol guidance](https://developer.apple.com/documentation/xcode/building-your-app-to-include-debugging-information).
+
 ## Policy drafts and website handoff
 
 The website is the policy source of truth; no duplicate Privacy/Terms reader or policy copy is bundled. The product links target:
@@ -77,6 +87,19 @@ The editable drafts are `html/Policies/Privacy_Extract_Chat.md` and `html/Polici
 Keep the repository MIT notice and bundled third-party notices. Website Terms explain usage rather than restricting MIT rights; App Store license-agreement metadata is a separate submission decision. Policy wording must distinguish local processing, optional support correspondence, local diagnostics and third-party folder-provider synchronization. Do not claim that local conversion eliminates every security risk or all privacy obligations.
 
 For the Jekyll handoff, review consistent support/contact, documentation, availability, licensing, policies and purchase/refund routes across products without imposing a single license or business model. Distinguish public issues from private support for sensitive conversation archives; use the stable product support URL to route users without requiring an app update.
+
+## App Store screenshots
+
+To do before submission: prepare actual-product screenshots framed for the Mac App Store, not arbitrary window-sized captures. Apple's [screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications/) list 16:10 Mac images at 1280 × 800, 1440 × 900, 2560 × 1600 or 2880 × 1800 pixels, with one to ten screenshots in JPEG/JPG/PNG format. Recheck the requirements at upload time. Use opaque RGB exports; retain high-resolution originals privately.
+
+Plan a consistent 2880 × 1800 set, with short captions and readable app content at thumbnail size. Capture a small, focused set rather than shrinking the fully expanded advanced-options window until its text is illegible:
+
+- Main extraction window with a small synthetic multi-source queue and basic options visible; make this the lead image.
+- Actual rendered HTML showing readable turns, a captured artifact, citations and conversation navigation. Clearly distinguish browser-rendered output from the native app.
+- Activity disclosures showing an exported tool call/result and image prompt, using synthetic/non-sensitive content.
+- Optional advanced-options/CLI-install view if it remains readable and adds useful information.
+
+Use only implemented features in the release being submitted; do not depict the future embedded-app/chart support as available. Exclude real conversations, names, financial data, private paths and unrelated desktop/browser chrome. Check exact pixel dimensions, aspect ratio, no transparency, clipping, caption legibility and small-thumbnail readability before upload. This is a planned asset task; no screenshots have been captured or submitted by this checklist entry.
 
 ## Remaining release gates
 

@@ -65,6 +65,19 @@ def test_app_signing_defaults_select_a_development_team() -> None:
         assert re.search(r"DEVELOPMENT_TEAM = [A-Z0-9]+;", configuration)
 
 
+def test_entitlements_navigator_reference_matches_the_signing_input() -> None:
+    app = ROOT / "macos/ExtractChatApp"
+    project = (app / "ExtractChatApp.xcodeproj/project.pbxproj").read_text(encoding="utf-8")
+    reference = re.search(r"/\* ExtractChatApp\.entitlements \*/\s*=\s*\{([^}]+)\}", project)
+    assert reference is not None
+    assert "sourceTree = SOURCE_ROOT;" in reference.group(1), "The entitlements file is at the project root, not under Sources/ExtractChatApp"
+    assert "path = ExtractChatApp.entitlements;" in reference.group(1)
+    assert project.count("CODE_SIGN_ENTITLEMENTS = ExtractChatApp.entitlements;") == 2
+    permissions = plistlib.loads((app / "ExtractChatApp.entitlements").read_bytes())
+    assert permissions["com.apple.security.app-sandbox"] is True
+    assert permissions["com.apple.security.files.downloads.read-write"] is True
+
+
 def test_app_deployment_minimum_and_reviewed_build_settings() -> None:
     app = ROOT / "macos/ExtractChatApp"
     project = (app / "ExtractChatApp.xcodeproj/project.pbxproj").read_text(encoding="utf-8")
@@ -77,6 +90,18 @@ def test_app_deployment_minimum_and_reviewed_build_settings() -> None:
     acceptance = plistlib.loads((ROOT / "macos/Tests/GUIAcceptance-Info.plist").read_bytes())
     assert acceptance["LSMinimumSystemVersion"] == "14.0"
     assert "arm64-apple-macos14.0" in (ROOT / "scripts/build_macos_gui_acceptance.sh").read_text(encoding="utf-8")
+
+
+def test_initial_native_release_explicitly_targets_apple_silicon() -> None:
+    project = (ROOT / "macos/ExtractChatApp/ExtractChatApp.xcodeproj/project.pbxproj").read_text(encoding="utf-8")
+    configurations = [block for block in re.findall(r"buildSettings\s*=\s*\{(.*?)\};", project, re.DOTALL) if "PRODUCT_BUNDLE_IDENTIFIER = ai.unixwzrd.ExtractChat;" in block]
+    assert len(configurations) == 2
+    for configuration in configurations:
+        assert 'ARCHS = "$(ARCHS_STANDARD)";' in configuration
+        assert '"EXCLUDED_ARCHS[sdk=macosx*]" = x86_64;' in configuration, "Debug and Release must exclude Intel to match the initial arm64-only engine, even if ARCHS is reset to Standard"
+    checker = (ROOT / "scripts/check_xcode_engine.sh").read_text(encoding="utf-8")
+    assert 'for architecture in ${ARCHS:?' in checker
+    assert '-verify_arch "$architecture"' in checker, "Retain native engine architecture checks for future universal builds"
 
 
 def test_mac_icon_catalog_has_every_standard_and_retina_slot() -> None:

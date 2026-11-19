@@ -1,6 +1,6 @@
 # Extract Chat for macOS
 
-Version 1.0.0 is an unreleased development candidate for macOS 14 or later. Local builds and acceptance tests pass on Apple Silicon; they do not establish App Store distribution readiness, Intel support, or behavior on every supported OS/cloud provider. See [App Store preparation](APP-STORE-PREPARATION.md) for the current release gates and [dependency qualification](DEPENDENCY-AUDIT.md) for the runtime audit.
+Version 1.0.0 is the tagged source/support version for the initial Apple Silicon app on macOS 14 or later. Its native build has been uploaded to App Store Connect; this is not a claim of App Store approval or public native-app availability. The native app uses Standard Architectures with `x86_64` excluded for the macOS SDK in both Debug and Release, making its effective architecture `arm64`; Intel/universal support is deferred. The Architectures editor may still display Standard Architectures (Apple silicon, Intel): inspect Excluded Architectures and the effective Archive settings before diagnosing that label as an Intel build. Local builds and acceptance tests do not establish behavior on every supported OS/cloud provider. See [App Store preparation](APP-STORE-PREPARATION.md) for current release gates and the known runtime-symbol warnings, and [dependency qualification](DEPENDENCY-AUDIT.md) for the runtime audit.
 
 ## Build
 
